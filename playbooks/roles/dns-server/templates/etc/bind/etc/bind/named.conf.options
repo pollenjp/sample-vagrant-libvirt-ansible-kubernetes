@@ -1,0 +1,43 @@
+
+acl internal_network {
+	{% for acl_network in access_control_list.internal_network %}
+	{{ acl_network }};
+	{% endfor %}
+};
+
+options {
+	// directory "/var/cache/bind";
+	directory "/etc/bind";
+
+	// Don't response because of security risk
+	version "not currently available";
+
+	// If there is a firewall between you and nameservers you want
+	// to talk to, you may need to fix the firewall to allow multiple
+	// ports to talk.  See http://www.kb.cert.org/vuls/id/800113
+
+	// If your ISP provided one or more IP addresses for stable
+	// nameservers, you probably want to use them as forwarders.
+	// Uncomment the following block, and insert the addresses replacing
+	// the all-0's placeholder.
+
+	// 名前解決ができなかった場合の転送先
+	forwarders {
+		8.8.8.8;
+	};
+
+	recursion yes;
+	allow-recursion { internal_network; };
+	// 問い合わせを受け付けるネットワークおよびホスト
+	allow-query { internal_network; };
+	allow-query-cache { internal_network; };
+
+
+	//========================================================================
+	// If BIND logs error messages about the root key being expired,
+	// you will need to update your keys.  See https://www.isc.org/bind-keys
+	//========================================================================
+	dnssec-validation auto;
+
+	listen-on-v6 { any; };
+};

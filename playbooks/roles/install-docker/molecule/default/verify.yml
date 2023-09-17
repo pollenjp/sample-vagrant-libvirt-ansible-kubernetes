@@ -1,0 +1,34 @@
+---
+# This is an example playbook to execute Ansible tests.
+
+- name: Verify
+  hosts: all
+  gather_facts: false
+  tasks:
+    - name: Example assertion
+      ansible.builtin.set_fact:
+        docker_name: "molecule-install-docker"
+
+    - name: docker run
+      community.docker.docker_container:
+        name: "{{ docker_name }}"
+        image: docker.io/library/debian
+        detach: true
+        pull: true
+        restart_policy: always
+        recreate: true
+        command: >
+          /bin/bash -c "echo 'Hello World'"
+      register: result
+
+    - name: Retry a task until a certain condition is met
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          docker logs "{{ docker_name }}"
+      register: result
+      until:
+        - >
+          'Hello World' in result.stdout_lines
+      retries: 2
+      delay: 10

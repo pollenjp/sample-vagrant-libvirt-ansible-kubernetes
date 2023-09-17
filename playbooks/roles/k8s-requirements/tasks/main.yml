@@ -1,0 +1,112 @@
+---
+- name: upgrade packages
+  become: true
+  ansible.builtin.apt:
+    upgrade: true
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: check supported version
+  ansible.builtin.debug:
+    msg: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+  failed_when:
+    - >-
+      not (
+        ansible_distribution == "Ubuntu"
+        and
+        ansible_distribution_version in ("22.04",)
+      )
+
+#################
+# turn off swap #
+#################
+
+# Swap off for Ubuntu
+
+# sed --in-place 's/^\(\/swap.img\)/# \1/' /etc/fstab
+- name: /etc/fstab
+  become: true
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^(\/swap\.img.*)$'
+    line: '# \1'
+    backrefs: true
+  when: ansible_distribution in ("Ubuntu",)
+  register: result_swap
+- name: swap off
+  become: true
+  ansible.builtin.command: swapoff -a
+  when:
+    - >-
+      ansible_distribution in ("Ubuntu",)
+      and
+      ansible_distribution_version in ("20.04", "22.04",)
+    - result_swap.changed
+
+# Swap off for Raspberry Pi (OS:Ubuntu20.04)
+
+- name: Set a tmp variable
+  ansible.builtin.set_fact:
+    # This file is in Raspberry Pi (OS:Ubuntu20.04).
+    tmp_filepath: /boot/firmware/cmdline.txt
+- name: /boot/firmware/cmdline.txt
+  ansible.builtin.stat:
+    path: "{{ tmp_filepath }}"
+  register: result_filepath
+- name: Edit /boot/firmware/cmdline.txt for raspi
+  become: true
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      filepath="{{ tmp_filepath }}"
+
+      function append_cmdline_args() {
+          local filepath=$1
+          local args="${@:2}"
+          if [[ -f ${filepath} ]] && !(cat ${filepath} | grep "${args}"); then
+              sed --in-place -e "1 s/$/ ${args}/g" ${filepath}
+          fi
+      }
+
+      if [[ -f "${filepath}" ]]; then
+          append_cmdline_args "${filepath}" "cgroup_enable=cpuset"
+          append_cmdline_args "${filepath}" "cgroup_enable=memory"
+          append_cmdline_args "${filepath}" "cgroup_memory=1"
+      fi
+  when:
+    - ansible_distribution in ("Ubuntu", )
+    # exists in Raspberry Pi
+    - result_filepath.stat.exists
+- ansible.builtin.set_fact:
+    # skip reboot is not implemented for raspi
+    # always true
+    result_swap:
+      changed: true
+  when:
+    - ansible_distribution in ("Ubuntu", )
+    # exists in Raspberry Pi
+    - result_filepath.stat.exists
+
+##########
+# reboot #
+##########
+
+- name: reboot
+  become: true
+  ansible.builtin.shell: >
+    sleep 5 && reboot
+  async: 1
+  poll: 0
+  when: result_swap.changed
+- name: Wait for the reboot to complete if there was a change.
+  wait_for_connection:
+    connect_timeout: 30
+    delay: 10
+    sleep: 10
+    # timeout: 900 # 15m
+    # FIXME: 複数の vagrant machine を一度に reboot するとかなり時間がかかる場合がある
+    timeout: 3600 # 1h
+  when: result_swap.changed
+- name: Check the Uptime of the server
+  ansible.builtin.command: uptime
+  when: result_swap.changed

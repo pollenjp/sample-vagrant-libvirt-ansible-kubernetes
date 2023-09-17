@@ -1,0 +1,6 @@
+{% for domain_name in domain_name_list  %}
+zone "{{ domain_name }}" {
+	type master;
+	file "{{ domain_name }}.zone";
+};
+{% endfor %}

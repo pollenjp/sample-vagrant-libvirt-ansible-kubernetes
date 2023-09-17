@@ -1,0 +1,11 @@
+---
+- name: check current user is already enabled linger?
+  ansible.builtin.stat:
+    path: "/var/lib/systemd/linger/{{ ansible_user_id }}"
+  register: result_linger_file
+- name: enable user systemd
+  become: true
+  ansible.builtin.command: loginctl enable-linger {{ ansible_user_id }}
+  when: not result_linger_file.stat.exists
+- name: reconnect
+  ansible.builtin.meta: reset_connection

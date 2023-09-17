@@ -1,0 +1,157 @@
+---
+###########
+# kubeadm #
+###########
+
+- name: Check required variables
+  ansible.builtin.debug:
+    msg: |
+      Expecting distribution is 'Ubuntu': {{ ansible_distribution }}
+      Expecting version is '22.04': {{ ansible_distribution_version }}
+  failed_when:
+    - not (
+      ansible_distribution == "Ubuntu"
+      and
+      ansible_distribution_version == "22.04"
+      )
+
+- name: Resolve domain name
+  ansible.builtin.command:
+    # TODO: @pollenjp Validation to check if 'inventory_hostname' is a domain name
+    cmd: >-
+      dig -t a
+      {{ '@' ~ network_configs.name_server if network_configs.name_server }}
+      +short
+      {{ inventory_hostname }}
+  register: result
+  changed_when: false
+- name: Set k8s_apiserver_advertise_address and validate as ip address
+  ansible.builtin.set_fact:
+    k8s_apiserver_advertise_address: "{{ result.stdout | ansible.utils.ipaddr('address') }}"
+  changed_when: false
+  failed_when:
+    - not k8s_apiserver_advertise_address
+
+- name: Check required vars
+  ansible.builtin.debug:
+    msg: |
+      k8s_apiserver_advertise_address: {{ k8s_apiserver_advertise_address }}
+      k8s_cp_endpoint: {{ k8s_cp_endpoint }}
+- name: Copy kubeadm_config.yaml
+  ansible.builtin.template:
+    src: tmp/kubeadm_config.yaml
+    dest: /tmp/kubeadm_config.yaml
+    mode: "0644"
+
+- name: Reset kubeadm
+  become: true
+  ansible.builtin.command: kubeadm reset -f
+
+- name: Initialize kubeadm
+  become: true
+  ansible.builtin.command:
+    cmd: >-
+      kubeadm init
+        --skip-token-print
+        --config /tmp/kubeadm_config.yaml
+        --upload-certs
+- name: Kubelet daemon-reload and restart
+  become: true
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+    daemon_reload: true
+
+- name: Sleep for kubelet running completely
+  ansible.builtin.command: sleep 20
+  changed_when: false
+- name: Check kubelet status
+  ansible.builtin.command: systemctl is-active kubelet.service
+
+#########################################################
+# Copy the `admin.conf` file to the `~/.kube` directory #
+#########################################################
+
+- name: Make directory .kube
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: "0755"
+- name: Copy config to home dir
+  become: true
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: "0600"
+
+###########
+# flannel #
+###########
+
+- name: Download a manifest of Flannel for k8s
+  ansible.builtin.template:
+    src: config/kube-flannel.yml
+    dest: "{{ ansible_env.HOME }}/kube-flannel.yml"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: 0644
+- name: Deploy Flannel
+  ansible.builtin.command: >-
+    kubectl apply -f "{{ ansible_env.HOME }}/kube-flannel.yml"
+
+################
+# Install Helm #
+################
+#
+# <https://helm.sh/docs/intro/install/#from-apt-debianubuntu>
+#
+# ```sh
+# curl https://baltocdn.com/helm/signing.asc | gpg --dearmor | sudo tee /usr/share/keyrings/helm.gpg > /dev/null
+# sudo apt-get install apt-transport-https --yes
+# echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main" | sudo tee /etc/apt/sources.list.d/helm-stable-debian.list
+# sudo apt-get update
+# sudo apt-get install helm
+# ```
+#
+- ansible.builtin.set_fact:
+    helm_keyring_path: /usr/share/keyrings/helm.gpg
+- name: Set architecture variable
+  ansible.builtin.command: dpkg --print-architecture
+  register: result_architecture
+- name: Add Helm's GPG key
+  become: true
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      curl https://baltocdn.com/helm/signing.asc \
+      | gpg --dearmor \
+      | tee "{{ helm_keyring_path }}" \
+      > /dev/null
+- name: Install helm requirements
+  become: true
+  ansible.builtin.apt:
+    name: apt-transport-https
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Add Kubernetes' APT repository
+  become: true
+  ansible.builtin.apt_repository:
+    repo: >
+      deb
+      [arch={{ result_architecture.stdout.rstrip() }} signed-by={{ helm_keyring_path }}]
+      https://baltocdn.com/helm/stable/debian/
+      all
+      main
+    filename: helm-stable-debian
+- name: Apt install Helm
+  become: true
+  ansible.builtin.apt:
+    name: helm
+    update_cache: true
+    cache_valid_time: 3600

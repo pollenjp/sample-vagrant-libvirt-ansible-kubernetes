@@ -1,0 +1,64 @@
+[project]
+name = "pollenjp-infra-ansible"
+version = "0.1.0"
+description = "Add your description here"
+authors = [{ name = "pollenjp", email = "polleninjp@gmail.com" }]
+readme = "README.md"
+requires-python = ">= 3.11"
+dependencies = [
+    "ansible>=8.4.0",
+    "ansible-navigator>=3.4.2",
+    "netaddr>=0.8.0",
+    "typed-argument-parser>=1.8.1",
+    "paramiko>=3.3.1",
+    "pydantic>=2.3.0",
+    "jmespath>=1.0.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.rye]
+dev-dependencies = [
+    "black>=23.9.1",
+    "flake8>=6.1.0",
+    "autoflake8>=0.4.1",
+    "isort>=5.12.0",
+    "mypy>=1.5.1",
+    "nox>=2023.4.22",
+    "ansible-lint>=6.19.0",
+    "yamllint>=1.32.0",
+    "molecule[vagrant]>=6.0.2",
+    "molecule-vagrant>=2.0.0",
+]
+
+[tool.hatch.metadata]
+allow-direct-references = true
+
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
+line_length = 120
+force_single_line = true
+import_heading_stdlib = "Standard Library"
+import_heading_thirdparty = "Third Party Library"
+import_heading_firstparty = "First Party Library"
+import_heading_localfolder = "Local Library"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+disallow_any_expr = true
+disallow_any_decorated = true
+disallow_any_explicit = true
+disallow_any_unimported = true
+warn_incomplete_stub = true
+warn_unreachable = true
+
+show_error_codes = true
+enable_error_code = "ignore-without-code"

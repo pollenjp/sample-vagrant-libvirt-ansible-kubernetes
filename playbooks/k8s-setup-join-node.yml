@@ -1,0 +1,241 @@
+---
+- name: Setup k8s other nodes
+  hosts:
+    - k8s_other_nodes
+  roles:
+    - role: k8s-requirements
+    - role: install-kubernetes
+      become: true
+
+- name: Get secret info from the control plane's master node
+  hosts:
+    - k8s_cp_master
+  roles:
+    - role: k8s-requirements
+    - role: install-kubernetes
+      become: true
+  tasks:
+    ###################################
+    # k8s_apiserver_advertise_address #
+    ###################################
+
+    - name: Resolve domain name
+      ansible.builtin.command:
+        # TODO: @pollenjp Validation to check if 'inventory_hostname' is a domain name
+        cmd: >-
+          dig -t a
+          {{ '@' ~ network_configs.name_server if network_configs.name_server }}
+          +short
+          {{ inventory_hostname }}
+      register: result
+      changed_when: false
+    - name: Set k8s_apiserver_advertise_address and validate as ip address
+      ansible.builtin.set_fact:
+        k8s_apiserver_advertise_address: "{{ result.stdout | ansible.utils.ipaddr('address') }}"
+      changed_when: false
+      failed_when:
+        - not k8s_apiserver_advertise_address
+
+    #############
+    # k8s_token #
+    #############
+
+    - name: Check kubeadm token
+      become: true
+      no_log: true
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          TOKEN_NUM="$(kubeadm token list | wc -l)"
+          if [[ "${TOKEN_NUM}" -gt 0 ]]; then
+              kubeadm token create --ttl 30m \
+                2>&1 \
+                > /dev/null
+          fi
+
+          k8s_token=$(
+          kubeadm token list -o go-template='{% raw %}
+          {{- $containsAuthentication := false -}}
+          {{- $containsSigning := false -}}
+          {{- range .usages -}}
+              {{- if eq . "authentication" -}}
+                  {{- $containsAuthentication = true -}}
+              {{- end -}}
+              {{- if eq . "signing" -}}
+                  {{- $containsSigning = true -}}
+              {{- end -}}
+          {{- end -}}
+          {{- if and $containsAuthentication $containsSigning -}}
+            {{- printf "%s\n" .token -}}
+          {{- end -}}'{% endraw %} \
+          | head -n 1
+          )
+
+          echo ${k8s_token}
+      register: result
+      changed_when: false
+    - name: Set token as variable
+      no_log: true
+      ansible.builtin.set_fact:
+        k8s_token: "{{ result.stdout.rstrip() }}"
+      failed_when: not k8s_token
+
+    ####################################
+    # k8s_discovery_token_ca_cert_hash #
+    ####################################
+
+    - name: Get hash from ca.crt
+      no_log: true
+      ansible.builtin.shell:
+        executable: /bin/bash
+        cmd: |
+          set -o pipefail
+          openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt \
+            | openssl rsa -pubin -outform der 2>/dev/null \
+            | openssl dgst -sha256 -hex \
+            | sed 's/^.* //'
+      register: result
+      changed_when: false
+    - name: Set k8s_discovery_token_ca_cert_hash
+      no_log: true
+      ansible.builtin.set_fact:
+        k8s_discovery_token_ca_cert_hash: "{{ result.stdout }}"
+      failed_when: not k8s_discovery_token_ca_cert_hash
+
+    ####################################################
+    # Certificate key for kubeadm join --control-plane #
+    ####################################################
+
+    - name: Generate certificate-key
+      become: true
+      no_log: true
+      ansible.builtin.command:
+        cmd: >
+          kubeadm certs certificate-key
+      register: result
+    - name: Set certificate-key as variable
+      no_log: true
+      ansible.builtin.set_fact:
+        k8s_certificate_key: "{{ result.stdout.rstrip() }}"
+      failed_when: not k8s_certificate_key
+
+    # control-plane をｓ追加す場合の対応
+    - name: Kubeadm upload-certs
+      become: true
+      ansible.builtin.command:
+        cmd: >
+          kubeadm init phase upload-certs
+          --upload-certs
+          --certificate-key {{ k8s_certificate_key }}
+          --skip-certificate-key-print
+
+    ###########################
+    # fetch variables as file #
+    ###########################
+
+    - name: Create temporary file
+      ansible.builtin.tempfile:
+        state: file
+        suffix: .tempfile_kubeadm_vars.yml
+      register: tempfile_kubeadm_vars
+    - name: Write token to tempfile
+      ansible.builtin.copy:
+        content: |
+          k8s_apiserver_advertise_address: {{ k8s_apiserver_advertise_address }}
+          k8s_token: {{ k8s_token }}
+          k8s_discovery_token_ca_cert_hash: {{ k8s_discovery_token_ca_cert_hash }}
+          k8s_certificate_key: {{ k8s_certificate_key }}
+        dest: "{{ tempfile_kubeadm_vars.path }}"
+    - name: Copy the token file to local
+      ansible.builtin.fetch:
+        src: "{{ tempfile_kubeadm_vars.path }}"
+        dest: "{{ playbook_dir }}/tmp/k8s_cp_master_kubeadm_variables.yml"
+        flat: true
+    - name: Remove tempfile
+      ansible.builtin.file:
+        path: "{{ tempfile_kubeadm_vars.path }}"
+        state: absent
+      when: tempfile_kubeadm_vars.path is defined
+
+- name: Join k8s nodes
+  hosts:
+    - k8s_other_nodes
+  tasks:
+    - name: Check supported version
+      ansible.builtin.debug:
+        msg: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+      failed_when:
+        - >-
+          not (
+            ansible_distribution == "Ubuntu"
+            and
+            ansible_distribution_version in ("22.04",)
+          )
+    - name: Check required variables
+      ansible.builtin.debug:
+        msg: |
+          k8s_is_control_plane={{ k8s_is_control_plane  }}
+
+    ################
+    # kubeadm join #
+    ################
+
+    - name: Load kubeadm variables
+      # no_log: true # TODO: secret log
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/tmp/k8s_cp_master_kubeadm_variables.yml"
+      failed_when:
+        - not k8s_apiserver_advertise_address
+        - not k8s_token
+        - not k8s_discovery_token_ca_cert_hash
+        - not k8s_certificate_key
+    - name: kubeadm reset
+      become: true
+      ansible.builtin.command:
+        cmd: kubeadm reset -f
+    - name: kubeadm join
+      become: true
+      # no_log: true # TODO: secret log
+      ansible.builtin.command:
+        executable: /bin/bash
+        cmd: >
+          kubeadm join
+            {{ k8s_apiserver_advertise_address }}:6443
+            {{ "--control-plane" if k8s_is_control_plane }}
+            {{ "--certificate-key " ~ k8s_certificate_key if k8s_is_control_plane }}
+            --token {{ k8s_token }}
+            --discovery-token-ca-cert-hash sha256:{{ k8s_discovery_token_ca_cert_hash }}
+
+    ##################
+    # reload kubelet #
+    ##################
+
+    - name: daemon-reload and restart kubelet
+      become: true
+      ansible.builtin.systemd:
+        name: kubelet
+        state: restarted
+        daemon_reload: true
+
+    #########################################################
+    # Copy the `admin.conf` file to the `~/.kube` directory #
+    #########################################################
+
+    - name: Make directory .kube
+      ansible.builtin.file:
+        path: "{{ ansible_env.HOME }}/.kube"
+        state: directory
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+        mode: "0755"
+      when: k8s_is_control_plane
+    - name: Copy config to home dir
+      become: true
+      ansible.builtin.copy:
+        remote_src: true
+        src: /etc/kubernetes/admin.conf
+        dest: "{{ ansible_env.HOME }}/.kube/config"
+        owner: "{{ ansible_user_id }}"
+        group: "{{ ansible_user_id }}"
+        mode: "0600"
+      when: k8s_is_control_plane

@@ -1,0 +1,35 @@
+---
+# Variable check
+
+- name: Variable check
+  ansible.builtin.debug:
+    msg: |
+      app_python_path is '{{ app_python_path }}'
+      app_directory_path is '{{ app_directory_path }}'
+
+# Tasks
+
+- name: install poetry
+  ansible.builtin.command: >
+    {{ app_python_path }} -m pip install poetry
+- name: check .venv directory
+  ansible.builtin.command: >
+    {{ app_python_path }} -m poetry env info -p
+  args:
+    chdir: "{{ app_directory_path }}"
+  register: result
+  failed_when:
+    - result.failed
+    - result.stderr != ''
+- ansible.builtin.debug:
+    var: result
+- name: Remove existing virtualenv directory
+  ansible.builtin.file:
+    state: absent
+    path: "{{ result_venv_path.stdout | default('') }}"
+  when: not result.failed
+- name: poetry install
+  ansible.builtin.command: >
+    {{ app_python_path }} -m poetry install --without dev
+  args:
+    chdir: "{{ app_directory_path }}"
