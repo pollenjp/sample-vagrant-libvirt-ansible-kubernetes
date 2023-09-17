@@ -1,0 +1,5 @@
+.vagrant
+/.vault_password.txt
+/artifacts
+/logs
+/context

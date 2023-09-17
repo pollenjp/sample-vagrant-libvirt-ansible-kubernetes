@@ -21,6 +21,7 @@ func Copy() error {
 	destRoot := filepath.Join(dirname, "workdir/github/pollenjp/sample-vagrant-libvirt-ansible-kubernetes")
 
 	relativePaths := []string{
+		".gitignore",
 		".yamllint",
 		"Makefile",
 		"ansible.cfg",
