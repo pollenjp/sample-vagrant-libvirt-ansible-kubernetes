@@ -50,10 +50,7 @@ func Copy() error {
 	}
 
 	for _, target := range copyTargets {
-		fmt.Println("=======================")
-		fmt.Println(target)
-		// if file, create parent directory and copy file
-		// if target.src is file?
+		fmt.Printf("%s -> %s\n", target.src, target.dest)
 		fileInfo, err := os.Stat(target.src)
 		if err != nil {
 			return fmt.Errorf("file info: %w", err)
