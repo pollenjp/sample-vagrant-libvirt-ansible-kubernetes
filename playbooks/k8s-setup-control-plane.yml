@@ -1,0 +1,13 @@
+---
+- name: Setup Kubernetes Control Planes
+  hosts:
+    - k8s_cp_master
+  gather_facts: true
+  roles:
+    - role: k8s-requirements
+    - role: install-kubernetes
+      become: true
+  tasks:
+    - name: k8s master settings
+      ansible.builtin.include_role:
+        name: k8s-control-plane

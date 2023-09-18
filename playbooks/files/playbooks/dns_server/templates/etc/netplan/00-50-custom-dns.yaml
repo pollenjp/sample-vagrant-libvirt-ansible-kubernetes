@@ -1,0 +1,12 @@
+network:
+  version: 2
+  renderer: networkd
+  ethernets:
+    eth0:
+      dhcp4: true
+      dhcp4-overrides:
+        use-dns: false
+      dhcp6: false
+      nameservers:
+        addresses:
+          - "{{ network_configs.name_server }}"
