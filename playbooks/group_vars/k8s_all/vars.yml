@@ -1,0 +1,7 @@
+---
+# used by install-kubernetes role
+k8s_version:
+  major: 1
+  minor: 28
+  patch: 2
+k8s_version_ubuntu: "={{ k8s_version.major }}.{{ k8s_version.minor }}.{{ k8s_version.patch }}-1.1"
