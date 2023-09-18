@@ -1,6 +1,9 @@
 package main
 
 import (
+	"fmt"
+	"os"
+
 	"github.com/pollenjp/sample-vagrant-libvirt-ansible-kubernetes/tools/cmd/sub"
 	"github.com/spf13/cobra"
 )
@@ -12,12 +15,13 @@ var (
 			cmd.Help()
 		},
 	}
-	subCmdCopy = &cobra.Command{
-		Use:   "copy",
-		Short: "copy files",
-		Long:  `copy files`,
-		Run: func(_ *cobra.Command, _ []string) {
-			sub.Copy()
-		},
-	}
 )
+
+func Execute() {
+	rootCmd.AddCommand(sub.NewCmdCopy())
+	rootCmd.AddCommand(sub.NewCmdSetupVagrantK8s())
+	if err := rootCmd.Execute(); err != nil {
+		fmt.Println("Error: ", err)
+		os.Exit(1)
+	}
+}

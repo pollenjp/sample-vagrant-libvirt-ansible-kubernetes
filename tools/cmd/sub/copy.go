@@ -5,14 +5,26 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/spf13/cobra"
 )
+
+func NewCmdCopy() *cobra.Command {
+	return &cobra.Command{
+		Use:   "copy",
+		Short: "copy files",
+		Run: func(_ *cobra.Command, _ []string) {
+			copy()
+		},
+	}
+}
 
 type SrcDest struct {
 	src  string
 	dest string
 }
 
-func Copy() error {
+func copy() error {
 	dirname, err := os.UserHomeDir()
 	if err != nil {
 		return fmt.Errorf("failed to get user home directory: %w", err)
@@ -23,21 +35,26 @@ func Copy() error {
 	relativePaths := []string{
 		".gitignore",
 		".yamllint",
-		"Makefile",
 		"ansible.cfg",
-		"pyproject.toml",
-		"Vagrantfile",
 		"Gemfile",
 		"Gemfile.lock",
+		"Makefile",
+		"pyproject.toml",
+		"Vagrantfile",
 		"ansible-galaxy-requirements.yml",
-		"playbooks/.gitignore",
+		"inventory/.gitignore",
 		"inventory/vagrant.py",
+		"playbooks/.gitignore",
 		"playbooks/dns_server.yml",
+		"playbooks/k8s-setup-control-plane.yml",
 		"playbooks/k8s-setup-join-node.yml",
 		"playbooks/config/kube-flannel.yml",
+		"playbooks/files/playbooks/dns_server",
+		"playbooks/group_vars/k8s_all",
 		"playbooks/roles/dns-server",
-		"playbooks/roles/install-kubernetes",
+		"playbooks/roles/install-bind",
 		"playbooks/roles/install-docker",
+		"playbooks/roles/install-kubernetes",
 		"playbooks/roles/k8s-control-plane",
 		"playbooks/roles/k8s-requirements",
 		"playbooks/roles/utils",
