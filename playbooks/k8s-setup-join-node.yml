@@ -42,7 +42,7 @@
 
     - name: Check kubeadm token
       become: true
-      no_log: true
+      no_log: true # include secret
       ansible.builtin.shell:
         executable: /bin/bash
         cmd: |
@@ -75,7 +75,7 @@
       register: result
       changed_when: false
     - name: Set token as variable
-      no_log: true
+      no_log: true # include secret
       ansible.builtin.set_fact:
         k8s_token: "{{ result.stdout.rstrip() }}"
       failed_when: not k8s_token
@@ -85,7 +85,7 @@
     ####################################
 
     - name: Get hash from ca.crt
-      no_log: true
+      no_log: true # include secret
       ansible.builtin.shell:
         executable: /bin/bash
         cmd: |
@@ -97,7 +97,7 @@
       register: result
       changed_when: false
     - name: Set k8s_discovery_token_ca_cert_hash
-      no_log: true
+      no_log: true # include secret
       ansible.builtin.set_fact:
         k8s_discovery_token_ca_cert_hash: "{{ result.stdout }}"
       failed_when: not k8s_discovery_token_ca_cert_hash
@@ -108,13 +108,13 @@
 
     - name: Generate certificate-key
       become: true
-      no_log: true
+      no_log: true # include secret
       ansible.builtin.command:
         cmd: >
           kubeadm certs certificate-key
       register: result
     - name: Set certificate-key as variable
-      no_log: true
+      no_log: true # include secret
       ansible.builtin.set_fact:
         k8s_certificate_key: "{{ result.stdout.rstrip() }}"
       failed_when: not k8s_certificate_key
@@ -181,7 +181,7 @@
     ################
 
     - name: Load kubeadm variables
-      # no_log: true # TODO: secret log
+      no_log: true # include secret
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/tmp/k8s_cp_master_kubeadm_variables.yml"
       failed_when:
@@ -195,7 +195,7 @@
         cmd: kubeadm reset -f
     - name: kubeadm join
       become: true
-      # no_log: true # TODO: secret log
+      no_log: true # include secret
       ansible.builtin.command:
         executable: /bin/bash
         cmd: >
