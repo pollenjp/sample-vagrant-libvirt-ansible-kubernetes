@@ -1,11 +1,13 @@
 package sub
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 
+	homedir "github.com/mitchellh/go-homedir"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +16,10 @@ func NewCmdCopy() *cobra.Command {
 		Use:   "copy",
 		Short: "copy files",
 		Run: func(_ *cobra.Command, _ []string) {
-			copy()
+			if err := copy(); err != nil {
+				fmt.Fprintln(os.Stderr, err)
+				os.Exit(1)
+			}
 		},
 	}
 }
@@ -25,12 +30,12 @@ type SrcDest struct {
 }
 
 func copy() error {
-	dirname, err := os.UserHomeDir()
+	home, err := homedir.Dir()
 	if err != nil {
 		return fmt.Errorf("failed to get user home directory: %w", err)
 	}
-	srcRoot := filepath.Join(dirname, "workdir/github/pollenjp/infra/ansible")
-	destRoot := filepath.Join(dirname, "workdir/github/pollenjp/sample-vagrant-libvirt-ansible-kubernetes")
+	srcRoot := filepath.Join(home, "workdir/github.com/pollenjp/infra/ansible")
+	destRoot := filepath.Join(home, "workdir/github.com/pollenjp/sample-vagrant-libvirt-ansible-kubernetes")
 
 	relativePaths := []string{
 		".gitignore",
@@ -45,7 +50,7 @@ func copy() error {
 		"inventory/.gitignore",
 		"inventory/vagrant.py",
 		"playbooks/.gitignore",
-		"playbooks/dns_server.yml",
+		"playbooks/dns-server.yml",
 		"playbooks/k8s-setup-control-plane.yml",
 		"playbooks/k8s-setup-join-node.yml",
 		"playbooks/config/kube-flannel.yml",
@@ -58,6 +63,7 @@ func copy() error {
 		"playbooks/roles/k8s-control-plane",
 		"playbooks/roles/k8s-requirements",
 		"playbooks/roles/utils",
+		"tools/cmd",
 	}
 
 	copyTargets := []SrcDest{}
@@ -86,9 +92,8 @@ func copy() error {
 			src += "/"
 		}
 
-		// copy file
-		if err := exec.Command("rsync", "-a", src, target.dest).Run(); err != nil {
-			return fmt.Errorf("copying: %w", err)
+		if err := runCmdWithEachLineOutput(context.Background(), exec.Command("rsync", "-a", src, target.dest)); err != nil {
+			return err
 		}
 	}
 

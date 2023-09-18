@@ -8,19 +8,19 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
+	"sync"
+	"syscall"
+	"time"
 
+	"github.com/pollenjp/sample-vagrant-libvirt-ansible-kubernete/tools/cmd/config"
 	"github.com/spf13/cobra"
 )
 
 var (
-	sshConfig    = "inventory/vagrant.ssh_config"
-	inventory    = "inventory/vagrant.py"
-	vagrantHosts = []string{
-		"vm-dns.vagrant.home",
-		"vm01.vagrant.home",
-		"vm02.vagrant.home",
-	}
+	sshConfig = "inventory/vagrant.ssh_config"
+	inventory = "inventory/vagrant.py"
 )
 
 func NewCmdSetupVagrantK8s() *cobra.Command {
@@ -29,7 +29,7 @@ func NewCmdSetupVagrantK8s() *cobra.Command {
 		Short: "setup k8s with vagrant",
 		Run: func(_ *cobra.Command, _ []string) {
 			if err := setupVagrantK8s(); err != nil {
-				fmt.Println(err)
+				fmt.Fprintln(os.Stderr, err)
 				os.Exit(1)
 			}
 		},
@@ -37,11 +37,13 @@ func NewCmdSetupVagrantK8s() *cobra.Command {
 }
 
 func setupVagrantK8s() error {
-	if err := vagrantUp(); err != nil {
+	ctx := context.Background()
+
+	if err := vagrantUp(ctx); err != nil {
 		return err
 	}
 
-	if err := runCmdWithEachLineOutput(exec.Command(
+	if err := runCmdWithEachLineOutput(ctx, exec.Command(
 		"bash",
 		"-c",
 		fmt.Sprintf("vagrant ssh-config > %s", sshConfig),
@@ -49,17 +51,17 @@ func setupVagrantK8s() error {
 		return err
 	}
 
-	if err := runAnsiblePlaybook(); err != nil {
+	if err := runAnsiblePlaybook(ctx); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func runAnsiblePlaybook() error {
+func runAnsiblePlaybook(ctx context.Context) error {
 	playbooks := []string{
-		// "playbooks/dns_server.yml",
-		// "playbooks/k8s-setup-control-plane.yml",
+		"playbooks/dns-server.yml",
+		"playbooks/k8s-setup-control-plane.yml",
 		"playbooks/k8s-setup-join-node.yml",
 	}
 	cmdList := []*exec.Cmd{}
@@ -77,7 +79,7 @@ func runAnsiblePlaybook() error {
 	}
 
 	for _, cmd := range cmdList {
-		if err := runCmdWithEachLineOutput(cmd); err != nil {
+		if err := runCmdWithEachLineOutput(ctx, cmd); err != nil {
 			return err
 		}
 	}
@@ -85,50 +87,81 @@ func runAnsiblePlaybook() error {
 	return nil
 }
 
-func vagrantUp() error {
+func vagrantUp(ctx context.Context) error {
 	cmdList := []*exec.Cmd{}
 
 	// 各 host に対して vagrant up (一度に多くのVMを起動すると失敗する場合があるため、1つずつ起動する)
-	for _, host := range vagrantHosts {
+	for _, host := range config.VagrantHosts {
 		cmd := exec.Command("vagrant", "up", host)
 		cmdList = append(cmdList, cmd)
 	}
 
 	for _, cmd := range cmdList {
-		if err := runCmdWithEachLineOutput(cmd); err != nil {
-			return fmt.Errorf("command (%s %s): %w", cmd.Path, cmd.Args, err)
+		if err := runCmdWithEachLineOutput(ctx, cmd); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-func runCmdWithEachLineOutput(cmd *exec.Cmd) error {
+func runCmdWithEachLineOutput(ctx context.Context, cmd *exec.Cmd) error {
 	reader, writer := io.Pipe()
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // to kill process group
+	cmd.Stdout = writer
+	log.Printf("run command: %s\n", cmd.Args)
+	if err := cmd.Start(); err != nil {
+		return err
+	}
 
-	cmdCtx, cmdCtxCancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
 
-	scannerStopped := make(chan struct{})
+	wg.Add(1)
+	// get command output and manipulate it
 	go func() {
-		defer close(scannerStopped)
+		defer wg.Done()
 
 		scanner := bufio.NewScanner(reader)
-		for scanner.Scan() {
+		for scanner.Scan() { // false after writer.Close() and all data are read
 			log.Printf("[%s] %s\n", cmd.Args[0], scanner.Text())
 		}
 	}()
 
 	var cmdExitErr error
+	// command exit context
+	cmdCtx, cmdDone := context.WithCancel(ctx)
 
-	cmd.Stdout = writer
-	_ = cmd.Start()
+	wg.Add(1)
+	// command の終了を待つ goroutine
 	go func() {
+		defer wg.Done()
+		defer writer.Close()
+
 		cmdExitErr = cmd.Wait()
-		cmdCtxCancel()
-		writer.Close()
+		defer cmdDone()
 	}()
-	<-cmdCtx.Done()
-	<-scannerStopped
+
+	interruptSig := make(chan os.Signal, 1)
+	signal.Notify(interruptSig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
+	select {
+	case <-cmdCtx.Done(): // exit success
+	case s := <-interruptSig:
+		log.Printf("try to send signal (%s) to PID (%d)\n", s, cmd.Process.Pid)
+
+		// WARNING: (*os.Process).Signal Sending Interrupt on Windows is not implemented.
+		if err := cmd.Process.Signal(s); err != nil {
+			log.Printf("failed to send signal %s: %s\n", s, err)
+		}
+
+		select {
+		case <-cmdCtx.Done(): // successfully interrupted
+			log.Printf("successfully interrupted PID (%d)\n", cmd.Process.Pid)
+		case <-time.After(20 * time.Second): // timeout
+			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+		}
+	}
+
+	wg.Wait()
 
 	if cmdExitErr != nil {
 		return fmt.Errorf("%w %s", cmdExitErr, cmd.Args)

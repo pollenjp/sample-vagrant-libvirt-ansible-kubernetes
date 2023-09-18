@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/pollenjp/sample-vagrant-libvirt-ansible-kubernetes/tools/cmd/sub"
+	"github.com/pollenjp/sample-vagrant-libvirt-ansible-kubernete/tools/cmd/sub"
 	"github.com/spf13/cobra"
 )
 
