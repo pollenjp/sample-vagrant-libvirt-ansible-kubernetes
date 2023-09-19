@@ -60,7 +60,7 @@ func setupVagrantK8s() error {
 
 func runAnsiblePlaybook(ctx context.Context) error {
 	playbooks := []string{
-		"playbooks/dns-server.yml",
+		"playbooks/dns_server.yml",
 		"playbooks/k8s-setup-control-plane.yml",
 		"playbooks/k8s-setup-join-node.yml",
 	}
@@ -109,7 +109,6 @@ func runCmdWithEachLineOutput(ctx context.Context, cmd *exec.Cmd) error {
 	reader, writer := io.Pipe()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // to kill process group
 	cmd.Stdout = writer
-	log.Printf("run command: %s\n", cmd.Args)
 	if err := cmd.Start(); err != nil {
 		return err
 	}
@@ -123,7 +122,7 @@ func runCmdWithEachLineOutput(ctx context.Context, cmd *exec.Cmd) error {
 
 		scanner := bufio.NewScanner(reader)
 		for scanner.Scan() { // false after writer.Close() and all data are read
-			log.Printf("[%s] %s\n", cmd.Args[0], scanner.Text())
+			log.Printf("[%s:%d] %s\n", cmd.Args[0], cmd.Process.Pid, scanner.Text())
 		}
 	}()
 
@@ -158,6 +157,7 @@ func runCmdWithEachLineOutput(ctx context.Context, cmd *exec.Cmd) error {
 			log.Printf("successfully interrupted PID (%d)\n", cmd.Process.Pid)
 		case <-time.After(20 * time.Second): // timeout
 			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
+			log.Printf("forcefully killed PID (%d)\n", cmd.Process.Pid)
 		}
 	}
 

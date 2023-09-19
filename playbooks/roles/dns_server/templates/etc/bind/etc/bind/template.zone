@@ -1,0 +1,25 @@
+$TTL	1d
+@	IN	SOA	ns1 root.localhost. (
+			   202309100	; Serial (size:uint32) (YYYYMMDDX: date+1桁index)
+			          60	; 1w Refresh
+			          30	; 1d Retry
+			         120	; 4w Expire
+			          30	; 1d Negative Cache TTL
+			)
+@	IN	NS	ns1
+
+{% for v4_conf in item.value.ipv4  %}
+{% for name, addr in v4_conf.addresses.items()  %}
+{{ name }}	IN	A	{{ v4_conf.network_component }}.{{ addr }}
+{% endfor %}
+{% endfor %}
+
+{% for v6_conf in item.value.ipv6  %}
+{% for name, addr in v6_conf.addresses.items()  %}
+{{ name }}	IN	AAAA	{{ v6_conf.network_component }}{{ addr }}
+{% endfor %}
+{% endfor %}
+
+{% for name, actual_name in item.value.cnames.items()  %}
+{{ name }}	IN CNAME	{{ actual_name }}
+{% endfor %}

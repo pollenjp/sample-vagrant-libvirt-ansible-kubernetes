@@ -72,7 +72,7 @@ endif
 
 .PHONY: debug-k8s-setup
 debug-k8s-setup:  ## debug the playbook (vagrant)
-	${MAKE} clean
+#	${MAKE} clean
 	${MAKE} vagrant-up
 	-vagrant ssh-config > inventory/vagrant.ssh_config
 	ANSIBLE_SSH_ARGS='-F inventory/vagrant.ssh_config' \
@@ -90,12 +90,12 @@ debug-k8s-setup:  ## debug the playbook (vagrant)
 
 .PHONY: debug
 debug:
-	${MAKE} vagrant-up
+#	${MAKE} vagrant-up
 	-vagrant ssh-config > inventory/vagrant.ssh_config
 	ANSIBLE_SSH_ARGS='-F inventory/vagrant.ssh_config' \
 		rye run ansible-playbook \
 			-i inventory/vagrant.py \
-			playbooks/dns_server.yml
+			playbooks/debug.yml
 
 .PHONY: clean
 clean:  ## halt and destroy vagrant

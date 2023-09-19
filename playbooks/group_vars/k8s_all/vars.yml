@@ -1,5 +1,5 @@
 ---
-# used by install-kubernetes role
+# used by install_kubernetes role
 k8s_version:
   major: 1
   minor: 28

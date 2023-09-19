@@ -9,10 +9,10 @@
 
 # Tasks
 
-- name: install poetry
+- name: Install poetry
   ansible.builtin.command: >
     {{ app_python_path }} -m pip install poetry
-- name: check .venv directory
+- name: Check .venv directory
   ansible.builtin.command: >
     {{ app_python_path }} -m poetry env info -p
   args:
@@ -21,14 +21,15 @@
   failed_when:
     - result.failed
     - result.stderr != ''
-- ansible.builtin.debug:
+- name: Debug
+  ansible.builtin.debug:
     var: result
 - name: Remove existing virtualenv directory
   ansible.builtin.file:
     state: absent
     path: "{{ result_venv_path.stdout | default('') }}"
   when: not result.failed
-- name: poetry install
+- name: Poetry install
   ansible.builtin.command: >
     {{ app_python_path }} -m poetry install --without dev
   args:

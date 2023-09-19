@@ -1,0 +1,16 @@
+---
+- name: Debug augments
+  become: true
+  ansible.builtin.debug:
+    msg: |
+      install_docker_user: {{ install_docker_user }}
+
+- name: Invite the user to a docker group
+  become: true
+  ansible.builtin.user:
+    name: "{{ install_docker_user }}"
+    groups: docker
+    append: true
+
+- name: Reconnect
+  ansible.builtin.meta: reset_connection

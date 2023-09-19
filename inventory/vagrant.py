@@ -62,10 +62,11 @@ class GroupModel(BaseModel):
 
 
 class HostVars(BaseModel):
-    vm01: dict[str, t.Any] = Field(default_factory=dict, serialization_alias=f"{vagrant_domains.vm01}")
-    vm02: dict[str, t.Any] = Field(default_factory=dict, serialization_alias=f"{vagrant_domains.vm02}")
-    vm03: dict[str, t.Any] = Field(default_factory=dict, serialization_alias=f"{vagrant_domains.vm03}")
-    vm04: dict[str, t.Any] = Field(default_factory=dict, serialization_alias=f"{vagrant_domains.vm04}")
+    vm_dns: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm_dns}")
+    vm01: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm01}")
+    vm02: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm02}")
+    vm03: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm03}")
+    vm04: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm04}")
 
     model_config = ConfigDict(frozen=True)
 
@@ -92,6 +93,7 @@ class HostVars(BaseModel):
                     raise ValueError(f"{vm_name=} has same keys")
 
         return HostVars(
+            vm_dns={**self.vm_dns, **other.vm_dns},
             vm01={**self.vm01, **other.vm01},
             vm02={**self.vm02, **other.vm02},
             vm03={**self.vm03, **other.vm03},
@@ -102,7 +104,7 @@ class HostVars(BaseModel):
 class Meta(BaseModel):
     # - VagrantHost members
     # - custom vars for each host
-    hostvars: HostVars = Field(default_factory=HostVars)
+    hostvars: HostVars
 
     model_config = ConfigDict(frozen=True)
 
@@ -291,8 +293,7 @@ def create_network_configs_dns(vagrant_info: dict[Hostname, VagrantProvisioningI
                     ],
                     "ipv6": [],
                     "cnames": {  # format is 'cname: actual'
-                        # kubernetes control plane endpoint
-                        "k8s-cp-endpoint": "vm01",
+                        "k8s-cp-endpoint": "vm01",  # kubernetes control plane endpoint
                     },
                 },
             },
@@ -325,6 +326,7 @@ def main() -> None:
             all=GroupModel(),
             meta_info=Meta(
                 hostvars=HostVars(
+                    vm_dns={},
                     vm01={},
                     vm02={
                         "k8s_is_control_plane": True,

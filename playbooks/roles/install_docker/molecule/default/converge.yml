@@ -1,0 +1,13 @@
+---
+- name: Converge
+  hosts: all
+  tasks:
+    - name: Include install_docker
+      ansible.builtin.include_role:
+        name: install_docker
+    - name: Add docker role to the user
+      ansible.builtin.include_role:
+        name: install_docker
+        tasks_from: add_to_docker_group
+      vars:
+        install_docker_user: "{{ ansible_user_id }}"

@@ -9,11 +9,8 @@
       Expecting distribution is 'Ubuntu': {{ ansible_distribution }}
       Expecting version is '22.04': {{ ansible_distribution_version }}
   failed_when:
-    - not (
-      ansible_distribution == "Ubuntu"
-      and
-      ansible_distribution_version == "22.04"
-      )
+    - >-
+      not ( ansible_distribution == "Ubuntu" and ansible_distribution_version == "22.04" )
 
 - name: Resolve domain name
   ansible.builtin.command:
@@ -27,7 +24,7 @@
   changed_when: false
 - name: Set k8s_apiserver_advertise_address and validate as ip address
   ansible.builtin.set_fact:
-    k8s_apiserver_advertise_address: "{{ result.stdout | ansible.utils.ipaddr('address') }}"
+    k8s_apiserver_advertise_address: "{{ result.stdout.rstrip() | ansible.utils.ipaddr('address') }}"
   changed_when: false
   failed_when:
     - not k8s_apiserver_advertise_address
@@ -41,11 +38,13 @@
   ansible.builtin.template:
     src: tmp/kubeadm_config.yaml
     dest: /tmp/kubeadm_config.yaml
-    mode: "0644"
+    mode: 0644
 
 - name: Reset kubeadm
   become: true
+  # TODO: @pollenjp Delegate to a variable to if reset is required
   ansible.builtin.command: kubeadm reset -f
+  changed_when: false
 
 - name: Initialize kubeadm
   become: true
@@ -55,6 +54,7 @@
         --skip-token-print
         --config /tmp/kubeadm_config.yaml
         --upload-certs
+  changed_when: true
 - name: Kubelet daemon-reload and restart
   become: true
   ansible.builtin.systemd:
@@ -67,6 +67,7 @@
   changed_when: false
 - name: Check kubelet status
   ansible.builtin.command: systemctl is-active kubelet.service
+  changed_when: false
 
 #########################################################
 # Copy the `admin.conf` file to the `~/.kube` directory #
@@ -78,7 +79,7 @@
     state: directory
     owner: "{{ ansible_user_id }}"
     group: "{{ ansible_user_id }}"
-    mode: "0755"
+    mode: 0755
 - name: Copy config to home dir
   become: true
   ansible.builtin.copy:
@@ -87,7 +88,7 @@
     dest: "{{ ansible_env.HOME }}/.kube/config"
     owner: "{{ ansible_user_id }}"
     group: "{{ ansible_user_id }}"
-    mode: "0600"
+    mode: 0600
 
 ###########
 # flannel #
@@ -101,8 +102,10 @@
     group: "{{ ansible_user_id }}"
     mode: 0644
 - name: Deploy Flannel
+  # TODO: @pollenjp Use kubectl module
   ansible.builtin.command: >-
     kubectl apply -f "{{ ansible_env.HOME }}/kube-flannel.yml"
+  changed_when: true
 
 ################
 # Install Helm #
@@ -118,20 +121,29 @@
 # sudo apt-get install helm
 # ```
 #
-- ansible.builtin.set_fact:
+- name: Set keyring_path
+  ansible.builtin.set_fact:
     helm_keyring_path: /usr/share/keyrings/helm.gpg
+- name: Set keyring_path stat
+  ansible.builtin.stat:
+    path: "{{ helm_keyring_path }}"
+  register: result_helm_keyring_path
 - name: Set architecture variable
   ansible.builtin.command: dpkg --print-architecture
   register: result_architecture
+  changed_when: false
 - name: Add Helm's GPG key
   become: true
   ansible.builtin.shell:
     executable: /bin/bash
     cmd: |
+      set -o pipefail
       curl https://baltocdn.com/helm/signing.asc \
-      | gpg --dearmor \
-      | tee "{{ helm_keyring_path }}" \
-      > /dev/null
+        | gpg --dearmor \
+        | tee "{{ helm_keyring_path }}" \
+        > /dev/null
+  when: not result_helm_keyring_path.stat.exists
+
 - name: Install helm requirements
   become: true
   ansible.builtin.apt:

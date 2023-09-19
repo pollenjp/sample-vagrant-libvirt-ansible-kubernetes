@@ -1,0 +1,133 @@
+---
+#
+# <https://docs.docker.com/engine/install/>
+#
+
+########################
+# Install Requirements #
+########################
+
+- name: Check supported OS and version
+  ansible.builtin.debug:
+    msg: |
+      ansible_distribution: {{ ansible_distribution }}
+      ansible_distribution_version: {{ ansible_distribution_version }}
+  failed_when:
+    - >-
+      not (
+        ( ansible_distribution == "Ubuntu" and ansible_distribution_version == "22.04" )
+        or
+        ( ansible_distribution == "Debian" and ansible_distribution_version == "12" )
+      )
+
+- name: Install Docker requirements
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - ca-certificates
+      - curl
+      - gnupg
+      - lsb-release
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+##################
+# Docker GPG key #
+##################
+
+- name: Set apt repository url
+  ansible.builtin.set_fact:
+    docker_gpg_key_url: https://download.docker.com/linux/ubuntu/gpg
+  when:
+    - ansible_distribution == "Ubuntu"
+- name: Set apt repository url
+  ansible.builtin.set_fact:
+    docker_gpg_key_url: https://download.docker.com/linux/debian/gpg
+  when:
+    - ansible_distribution == "Debian"
+
+- name: Set keyring_path
+  ansible.builtin.set_fact:
+    docker_keyring_path: /etc/apt/keyrings/docker.gpg
+- name: Get keyring_path stat
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/docker.gpg
+  register: result_docker_keyring_path
+- name: Add GPG key
+  become: true
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+      curl -fsSL "{{ docker_gpg_key_url }}" | gpg --dearmor -o "{{ docker_keyring_path }}"
+  when: not result_docker_keyring_path.stat.exists
+
+#########################
+# Docker APT repository #
+#########################
+
+# Add Docker APT repository
+
+- name: Register the architecture
+  ansible.builtin.command: dpkg --print-architecture
+  register: result_architecture
+  changed_when: false
+
+# set apt repository url
+
+- name: Set apt repository url
+  ansible.builtin.set_fact:
+    apt_repository_url: https://download.docker.com/linux/ubuntu
+  when: ansible_distribution == "Ubuntu"
+- name: Set apt repository url
+  ansible.builtin.set_fact:
+    apt_repository_url: https://download.docker.com/linux/debian
+  when: ansible_distribution == "Debian"
+
+- name: Add Docker APT repository
+  become: true
+  ansible.builtin.apt_repository:
+    repo: >
+      deb
+      [arch={{ result_architecture.stdout.rstrip() }} signed-by={{ docker_keyring_path }}]
+      {{ apt_repository_url }}
+      {{ ansible_distribution_release }}
+      stable
+    state: present
+
+##################
+# install Docker #
+##################
+
+- name: Install packages
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - "docker-ce{{ docker_version_ubuntu }}"
+      - "docker-ce-cli{{ docker_version_ubuntu }}"
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+########################
+# ansible requirements #
+########################
+
+- name: Python3
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - python3
+      - python3-pip
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install docker and docker-compose package for ansible
+  ansible.builtin.pip:
+    name:
+      - docker
+      - docker-compose

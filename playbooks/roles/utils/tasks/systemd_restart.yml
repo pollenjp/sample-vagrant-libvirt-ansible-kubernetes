@@ -1,24 +1,24 @@
-- name: check vars
+- name: Check vars
   ansible.builtin.debug:
     msg: |
-      systemd_service_name: string  ='{{ systemd_service_name }}'
-      is_user_systemd: bool             ={{ is_user_systemd }}
+      utils_systemd_service_name: string  ='{{ utils_systemd_service_name }}'
+      utils_is_user_systemd     : bool    ={{ utils_is_user_systemd }}
 
-- name: restart systemd ( {{ systemd_service_name }} )
-  become: "{{ not is_user_systemd }}"
+- name: Restart systemd ( {{ utils_systemd_service_name }} )
+  become: "{{ not utils_is_user_systemd }}"
   ansible.builtin.systemd:
-    name: "{{ systemd_service_name }}"
+    name: "{{ utils_systemd_service_name }}"
     state: restarted
     scope: >-
-      {{ "user" if is_user_systemd else "system" }}
+      {{ "user" if utils_is_user_systemd else "system" }}
     enabled: true
     daemon_reload: true
-- name: sleep
+- name: Sleep
   ansible.builtin.command: sleep 20
-- name: status check
-  become: "{{ not is_user_systemd }}"
+- name: Check status
+  become: "{{ not utils_is_user_systemd }}"
   ansible.builtin.command: >-
     systemctl
-    {{ "--user" if is_user_systemd }}
+    {{ "--user" if utils_is_user_systemd }}
     is-active
-    {{ systemd_service_name }}
+    {{ utils_systemd_service_name }}

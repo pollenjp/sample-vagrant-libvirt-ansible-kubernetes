@@ -1,0 +1,115 @@
+---
+# Check by dig command like this:
+#
+# $ dig @pollenjp-herta.home1.pollenjp.com pollenjp-sora.home1.pollenjp.com
+#
+- name: Install and setup DNS server
+  hosts:
+    - dns_server
+  roles:
+    - role: dns_server
+  tasks:
+    - name: Debug
+      ansible.builtin.debug:
+        msg: |
+          "{{ ansible_host }}"
+          "{{ network_configs }}"
+    - name: Check name resolution
+      ansible.builtin.command:
+        # 現状 ns1.example.com はネームサーバーとしてい必ず存在するようにしている
+        cmd: >
+          dig
+          @{{ network_configs.name_server }}
+          ns1.{{ item.key }}
+          A
+      with_dict: "{{ network_configs.dns.domains }}"
+      changed_when: false
+
+- name: Update name server in vagrant
+  hosts:
+    - vagrant_all
+  tasks:
+    - name: Debug
+      ansible.builtin.debug:
+        msg: |
+          "{{ ansible_host }}"
+          "{{ network_configs }}"
+
+    ############################
+    # systemd-resolved.service #
+    ############################
+
+    - name: Remove default name server
+      become: true
+      ansible.builtin.lineinfile:
+        # sed 's/^DNS=.*$/DNS=/' /etc/systemd/resolved.conf
+        path: /etc/systemd/resolved.conf
+        regexp: "^DNS=.*$"
+        line: "DNS="
+        state: present
+    - name: Restart systemd
+      ansible.builtin.include_role:
+        name: utils
+        tasks_from: systemd_restart
+      vars:
+        utils_systemd_service_name: "systemd-resolved.service"
+        utils_is_user_systemd: false
+
+    ###########################
+    # clean netplan directory #
+    ###########################
+
+    - name: Find files to delete
+      become: true
+      ansible.builtin.find:
+        paths: /etc/netplan
+        recurse: true
+        patterns: "*.yaml"
+      register: result_files_to_delete
+    - name: Backup files
+      become: true
+      ansible.builtin.copy:
+        src: "{{ item.path }}"
+        dest: "{{ item.path }}.bak"
+        remote_src: true
+        mode: preserve
+      with_items: "{{ result_files_to_delete.files }}"
+    - name: Delete files
+      become: true
+      ansible.builtin.file:
+        path: "{{ item.path }}"
+        state: absent
+      with_items: "{{ result_files_to_delete.files }}"
+
+    ###########
+    # netplan #
+    ###########
+
+    - name: Add name server config
+      become: true
+      ansible.builtin.template:
+        src: "{{ playbook_dir }}/files/playbooks/dns_server/templates/etc/netplan/00-50-custom-dns.yaml"
+        dest: /etc/netplan/00-50-custom-dns.yaml
+        mode: "0644"
+      notify:
+        - Apply Netplan
+
+    #########
+    # Check #
+    #########
+
+    - name: Check name resolution
+      ansible.builtin.command:
+        # 現状 ns1.example.com はネームサーバーとしてい必ず存在するようにしている
+        cmd: >
+          dig
+          ns1.{{ item.key }}
+          A
+      with_dict: "{{ network_configs.dns.domains }}"
+      changed_when: false
+
+  handlers:
+    - name: Apply Netplan
+      become: true
+      ansible.builtin.command: netplan apply
+      changed_when: true

@@ -1,0 +1,236 @@
+---
+# root user
+
+- name: Check required variables
+  ansible.builtin.debug:
+    msg: |
+      k8s_version_ubuntu: {{ k8s_version_ubuntu }}
+- name: Check Supported OS and version
+  ansible.builtin.debug:
+    msg: |
+      ansible_distribution: {{ ansible_distribution }}
+      ansible_distribution_version: {{ ansible_distribution_version }}
+  failed_when:
+    - >-
+      not (
+        ( ansible_distribution == "Ubuntu" and ansible_distribution_version == "22.04" )
+        or
+        ( ansible_distribution == "Debian" and ansible_distribution_version == "12" )
+      )
+
+########################
+# flannel requirements #
+########################
+
+- name: Ensure br_netfilter is enabled.
+  become: true
+  community.general.modprobe:
+    name: br_netfilter
+    state: present
+
+- name: Set tmp variables
+  ansible.builtin.set_fact:
+    tmp_sysctl_file: /etc/sysctl.d/k8s.conf
+- name: Create sysctl file
+  become: true
+  ansible.builtin.file:
+    path: "{{ tmp_sysctl_file }}"
+    state: touch
+    owner: root
+    group: root
+    mode: "0644"
+- name: Set sysctl
+  become: true
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: 1
+    sysctl_set: true
+    sysctl_file: "{{ tmp_sysctl_file }}"
+    state: present
+    reload: true
+  with_items:
+    - net.bridge.bridge-nf-call-iptables
+    - net.bridge.bridge-nf-call-ip6tables
+
+#####################
+# Install Docker CE #
+#####################
+
+- name: Install docker ce
+  ansible.builtin.include_role:
+    name: install_docker
+- name: Add docker role to the user
+  ansible.builtin.include_role:
+    name: install_docker
+    tasks_from: add_to_docker_group
+  vars:
+    install_docker_user: "{{ ansible_user_id }}"
+
+######################
+# Install Kubernetes #
+######################
+###################################
+# Install Kubernetes requirements #
+###################################
+- name: Install requirements
+  become: true
+  ansible.builtin.apt:
+    pkg:
+      - ca-certificates
+      - curl
+      - apt-transport-https
+      - gnupg2
+    update_cache: true
+    cache_valid_time: 3600
+
+######################
+# Install kubernetes #
+######################
+#
+# <https://kubernetes.io/docs/setup/production-environment/tools/kubeadm/install-kubeadm/#dpkg-k8s-package-repo>
+# <https://kubernetes.io/blog/2023/08/15/pkgs-k8s-io-introduction/#how-to-migrate-deb>
+#
+- name: Set kubernetes_keyring_path
+  ansible.builtin.set_fact:
+    kubernetes_keyring_path: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+- name: Get kubernetes_keyring_path stat
+  ansible.builtin.stat:
+    path: "{{ kubernetes_keyring_path }}"
+  register: result_kubernetes_keyring_path
+- name: Add GPG key
+  become: true
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+      curl -fsSL "https://pkgs.k8s.io/core:/stable:/v{{ k8s_version.major }}.{{ k8s_version.minor }}/deb/Release.key" \
+        | gpg --dearmor -o "{{ kubernetes_keyring_path }}"
+  when: not result_kubernetes_keyring_path.stat.exists
+  changed_when: true
+- name: Download the public signing key for the Kubernetes package repositories
+  become: true
+  ansible.builtin.apt_repository:
+    repo: >
+      deb
+      [signed-by={{ kubernetes_keyring_path }}]
+      https://pkgs.k8s.io/core:/stable:/v1.28/deb/
+      /
+    filename: kubernetes
+- name: Unhold k8s packages
+  become: true
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: install
+  with_items:
+    - "kubelet"
+    - "kubeadm"
+    - "kubectl"
+- name: Install kubernetes tools
+  become: true
+  ansible.builtin.apt:
+    name:
+      - "kubelet{{ k8s_version_ubuntu }}"
+      - "kubeadm{{ k8s_version_ubuntu }}"
+      - "kubectl{{ k8s_version_ubuntu }}"
+    update_cache: true
+    allow_downgrade: true
+- name: Hold version
+  become: true
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  with_items:
+    - "kubelet"
+    - "kubeadm"
+    - "kubectl"
+
+- name: Enable kubelet
+  become: true
+  ansible.builtin.systemd:
+    name: kubelet
+    state: started
+    enabled: true
+
+#####################
+# download tomlpipe #
+#####################
+
+- name: Set tomlpipe version as a variable
+  ansible.builtin.set_fact:
+    tomlpipe_version: v0.3.0
+- name: Download tomlpipe
+  ansible.builtin.get_url:
+    url: >-
+      https://github.com/pollenjp/tomlpipe/releases/download/{{ tomlpipe_version }}/tomlpipe_{{ tomlpipe_version }}_x86_64-unknown-linux-musl.tar.gz
+    dest: /tmp/tomlpipe.tar.gz
+    mode: "0755"
+- name: Create directory to unarchive tomlpipe
+  ansible.builtin.file:
+    path: /tmp/tomlpipe
+    state: directory
+    mode: "0755"
+- name: Unarchive tomlpipe
+  ansible.builtin.unarchive:
+    src: /tmp/tomlpipe.tar.gz
+    dest: /tmp/tomlpipe
+    remote_src: true
+    mode: "0755"
+- name: Copy tomlpipe to PATH directory
+  become: true
+  ansible.builtin.copy:
+    src: /tmp/tomlpipe/tomlpipe
+    dest: /usr/local/bin/tomlpipe
+    remote_src: true
+    owner: root
+    group: root
+    mode: "0755"
+
+########
+# etcd #
+########
+
+# containerd
+
+- name: Set variables
+  ansible.builtin.set_fact:
+    containerd_default_config: /etc/containerd/config.toml
+- name: Check containerd config
+  become: true
+  # TODO: もっとセクションを特定してチェックする
+  # tomlpipe の update を待つ or stoml を使う
+  ansible.builtin.command: >-
+    grep "SystemdCgroup = true" {{ containerd_default_config }}
+  register: result # use failed info later
+  failed_when: false
+  changed_when: false
+- name: Copy containerd config for overriding
+  become: true
+  ansible.builtin.copy:
+    src: etc/containerd/config_override.toml
+    dest: /etc/containerd/config_override.toml
+    owner: root
+    group: root
+    mode: "0644"
+  when: not result.failed
+- name: Containerd config
+  become: true
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -o pipefail
+
+      containerd config default \
+        | tomlpipe override --override-toml /etc/containerd/config.toml \
+        | tomlpipe override --override-toml /etc/containerd/config_override.toml \
+          > /etc/containerd/config.toml
+  when: not result.failed
+  changed_when: true
+- name: Restart containerd
+  become: true
+  ansible.builtin.systemd:
+    name: containerd
+    state: restarted
+    daemon_reload: true
+- name: Sleep for waiting containerd running completely
+  ansible.builtin.command: sleep 20
+  changed_when: false

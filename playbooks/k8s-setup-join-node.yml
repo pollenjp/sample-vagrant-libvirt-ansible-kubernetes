@@ -3,17 +3,11 @@
   hosts:
     - k8s_other_nodes
   roles:
-    - role: k8s-requirements
-    - role: install-kubernetes
-      become: true
+    - role: install_kubernetes
 
 - name: Get secret info from the control plane's master node
   hosts:
-    - k8s_cp_master
-  roles:
-    - role: k8s-requirements
-    - role: install-kubernetes
-      become: true
+    - k8s_cp_master # Expect already running as a control plane
   tasks:
     ###################################
     # k8s_apiserver_advertise_address #
@@ -46,6 +40,8 @@
       ansible.builtin.shell:
         executable: /bin/bash
         cmd: |
+          set -o pipefail
+
           TOKEN_NUM="$(kubeadm token list | wc -l)"
           if [[ "${TOKEN_NUM}" -gt 0 ]]; then
               kubeadm token create --ttl 30m \
@@ -106,20 +102,20 @@
     # Certificate key for kubeadm join --control-plane #
     ####################################################
 
-    - name: Generate certificate-key
+    - name: Generate a new control-plane certificate key
       become: true
       no_log: true # include secret
       ansible.builtin.command:
-        cmd: >
-          kubeadm certs certificate-key
+        cmd: kubeadm certs certificate-key
       register: result
-    - name: Set certificate-key as variable
+      changed_when: false
+    - name: Set a certificate-key variable
       no_log: true # include secret
       ansible.builtin.set_fact:
         k8s_certificate_key: "{{ result.stdout.rstrip() }}"
       failed_when: not k8s_certificate_key
 
-    # control-plane をｓ追加す場合の対応
+    # control-plane を追加する場合の対応
     - name: Kubeadm upload-certs
       become: true
       ansible.builtin.command:
@@ -128,6 +124,7 @@
           --upload-certs
           --certificate-key {{ k8s_certificate_key }}
           --skip-certificate-key-print
+      changed_when: true
 
     ###########################
     # fetch variables as file #
@@ -139,6 +136,7 @@
         suffix: .tempfile_kubeadm_vars.yml
       register: tempfile_kubeadm_vars
     - name: Write token to tempfile
+      no_log: true # include secret
       ansible.builtin.copy:
         content: |
           k8s_apiserver_advertise_address: {{ k8s_apiserver_advertise_address }}
@@ -146,6 +144,7 @@
           k8s_discovery_token_ca_cert_hash: {{ k8s_discovery_token_ca_cert_hash }}
           k8s_certificate_key: {{ k8s_certificate_key }}
         dest: "{{ tempfile_kubeadm_vars.path }}"
+        mode: 0600
     - name: Copy the token file to local
       ansible.builtin.fetch:
         src: "{{ tempfile_kubeadm_vars.path }}"
@@ -174,7 +173,7 @@
     - name: Check required variables
       ansible.builtin.debug:
         msg: |
-          k8s_is_control_plane={{ k8s_is_control_plane  }}
+          k8s_is_control_plane={{ k8s_is_control_plane }}
 
     ################
     # kubeadm join #
@@ -189,11 +188,13 @@
         - not k8s_token
         - not k8s_discovery_token_ca_cert_hash
         - not k8s_certificate_key
-    - name: kubeadm reset
+    - name: Reset kubeadm
       become: true
+      # TODO: @pollenjp Delegate to a variable if reset is allowed
       ansible.builtin.command:
         cmd: kubeadm reset -f
-    - name: kubeadm join
+      changed_when: true
+    - name: Join node by 'kubeadm join'
       become: true
       no_log: true # include secret
       ansible.builtin.command:
@@ -205,12 +206,13 @@
             {{ "--certificate-key " ~ k8s_certificate_key if k8s_is_control_plane }}
             --token {{ k8s_token }}
             --discovery-token-ca-cert-hash sha256:{{ k8s_discovery_token_ca_cert_hash }}
+      changed_when: true
 
     ##################
     # reload kubelet #
     ##################
 
-    - name: daemon-reload and restart kubelet
+    - name: Restart kubelet
       become: true
       ansible.builtin.systemd:
         name: kubelet
