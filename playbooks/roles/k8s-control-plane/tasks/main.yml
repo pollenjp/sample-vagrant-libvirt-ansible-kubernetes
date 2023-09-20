@@ -53,7 +53,6 @@
       kubeadm init
         --skip-token-print
         --config /tmp/kubeadm_config.yaml
-        --upload-certs
   changed_when: true
 - name: Kubelet daemon-reload and restart
   become: true
