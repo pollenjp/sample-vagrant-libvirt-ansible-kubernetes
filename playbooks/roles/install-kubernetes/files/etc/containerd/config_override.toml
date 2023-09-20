@@ -1,4 +1,0 @@
-disabled_plugins = []
-
-[plugins."io.containerd.grpc.v1.cri".containerd.runtimes.runc.options]
-SystemdCgroup = true
