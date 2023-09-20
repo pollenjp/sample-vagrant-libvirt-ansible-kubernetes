@@ -90,7 +90,7 @@ debug-k8s-setup:  ## debug the playbook (vagrant)
 
 .PHONY: debug
 debug:
-#	${MAKE} vagrant-up
+	${MAKE} vagrant-up
 	-vagrant ssh-config > inventory/vagrant.ssh_config
 	ANSIBLE_SSH_ARGS='-F inventory/vagrant.ssh_config' \
 		rye run ansible-playbook \
@@ -102,6 +102,7 @@ clean:  ## halt and destroy vagrant
 	-${MAKE} vagrant-halt
 	-${MAKE} vagrant-destroy
 
+.PHONY: vagrant-up
 vagrant-up:  ##
 	vagrant box update
 	vagrant up vm-dns.vagrant.home
@@ -110,9 +111,11 @@ vagrant-up:  ##
 	vagrant up vm03.vagrant.home
 	vagrant up vm04.vagrant.home
 
+.PHONY: vagrant-halt
 vagrant-halt:  ##
 	vagrant halt
 
+.PHONY: vagrant-destroy
 vagrant-destroy:  ##
 	-${MAKE} vagrant-halt
 	vagrant destroy -f
