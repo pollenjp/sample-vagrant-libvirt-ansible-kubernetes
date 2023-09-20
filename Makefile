@@ -11,7 +11,7 @@ export
 
 .PHONY: install
 install:  ## install requirements
-	rye sync
+	rye sync --no-lock
 	rye run ansible-galaxy collection install -r ansible-galaxy-requirements.yml
 
 ############
