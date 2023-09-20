@@ -67,8 +67,8 @@ endif
 	[[ -f "${PLAYBOOK}" ]]
 	rye run ansible-playbook \
 		-vvv \
-		-i "${INVENTORY_FILE}" \
-		"${PLAYBOOK}"
+		-i ${INVENTORY_FILE} \
+		${PLAYBOOK}
 
 .PHONY: debug-k8s-setup
 debug-k8s-setup:  ## debug the playbook (vagrant)
@@ -77,15 +77,15 @@ debug-k8s-setup:  ## debug the playbook (vagrant)
 	-vagrant ssh-config > inventory/vagrant.ssh_config
 	ANSIBLE_SSH_ARGS='-F inventory/vagrant.ssh_config' \
 		${MAKE} run \
-			INVENTORY_FILE=inventory/vagrant.py \
-			PLAYBOOK=playbooks/dns_server.yml
+			INVENTORY_FILE="inventory/vagrant.py" \
+			PLAYBOOK="playbooks/dns_server.yml"
 	ANSIBLE_SSH_ARGS='-F inventory/vagrant.ssh_config' \
 		${MAKE} run \
-			INVENTORY_FILE=inventory/vagrant.py \
-			PLAYBOOK=playbooks/k8s-setup-control-plane.yml
+			INVENTORY_FILE="inventory/vagrant.py" \
+			PLAYBOOK="playbooks/k8s-setup-control-plane.yml"
 	ANSIBLE_SSH_ARGS='-F inventory/vagrant.ssh_config' \
 		${MAKE} run \
-			INVENTORY_FILE=inventory/vagrant.py \
+			INVENTORY_FILE="inventory/vagrant.py" \
 			PLAYBOOK="playbooks/k8s-setup-join-node.yml"
 
 .PHONY: debug
