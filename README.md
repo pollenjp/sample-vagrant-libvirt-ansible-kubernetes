@@ -1,5 +1,7 @@
 # sample-vagrant-libvirt-ansible-kubernetes
 
+![architecture](./docs/architecture.drawio.png)
+
 Some scripts written by go are in `tools/cmd`.
 See [go.work](./go.work).
 
@@ -35,4 +37,10 @@ go run ./tools/cmd help
 
   ```sh
   vagrant plugin install vagrant-libvirt
+  ```
+
+- Ansible
+
+  ```sh
+  make install
   ```
