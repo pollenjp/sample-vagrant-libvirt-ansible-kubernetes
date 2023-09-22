@@ -30,12 +30,18 @@ type SrcDest struct {
 }
 
 func copy() error {
+	ctx := context.Background()
+
 	home, err := homedir.Dir()
 	if err != nil {
 		return fmt.Errorf("failed to get user home directory: %w", err)
 	}
 	srcRoot := filepath.Join(home, "workdir/github.com/pollenjp/infra/ansible")
 	destRoot := filepath.Join(home, "workdir/github.com/pollenjp/sample-vagrant-libvirt-ansible-kubernetes")
+
+	if err := runCmdWithEachLineOutput(ctx, exec.Command("rm", "-rfv", filepath.Join(destRoot, "playbooks"))); err != nil {
+		return err
+	}
 
 	relativePaths := []string{
 		".gitignore",
@@ -92,7 +98,7 @@ func copy() error {
 			src += "/"
 		}
 
-		if err := runCmdWithEachLineOutput(context.Background(), exec.Command("rsync", "-a", src, target.dest)); err != nil {
+		if err := runCmdWithEachLineOutput(ctx, exec.Command("rsync", "-a", src, target.dest)); err != nil {
 			return err
 		}
 	}
