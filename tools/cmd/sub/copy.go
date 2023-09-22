@@ -43,6 +43,10 @@ func copy() error {
 		return err
 	}
 
+	if err := runCmdWithEachLineOutput(ctx, exec.Command("rm", "-rfv", filepath.Join(destRoot, "tools", "cmd"))); err != nil {
+		return err
+	}
+
 	relativePaths := []string{
 		".gitignore",
 		".yamllint",
