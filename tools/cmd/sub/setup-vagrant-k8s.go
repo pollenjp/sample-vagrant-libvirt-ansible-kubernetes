@@ -39,6 +39,14 @@ func NewCmdSetupVagrantK8s() *cobra.Command {
 func setupVagrantK8s() error {
 	ctx := context.Background()
 
+	if err := runCmdWithEachLineOutput(ctx, exec.Command("vagrant", "destroy", "--force", "--graceful")); err != nil {
+		return err
+	}
+
+	if err := runCmdWithEachLineOutput(ctx, exec.Command("vagrant", "box", "update")); err != nil {
+		return err
+	}
+
 	if err := vagrantUp(ctx); err != nil {
 		return err
 	}
@@ -106,6 +114,8 @@ func vagrantUp(ctx context.Context) error {
 }
 
 func runCmdWithEachLineOutput(ctx context.Context, cmd *exec.Cmd) error {
+	fmt.Printf("run command: %s\n", cmd.Args)
+
 	reader, writer := io.Pipe()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // to kill process group
 	cmd.Stdout = writer
@@ -133,31 +143,35 @@ func runCmdWithEachLineOutput(ctx context.Context, cmd *exec.Cmd) error {
 	wg.Add(1)
 	// command の終了を待つ goroutine
 	go func() {
-		defer wg.Done()
-		defer writer.Close()
-
 		cmdExitErr = cmd.Wait()
-		defer cmdDone()
+		cmdDone()
+		writer.Close()
+		wg.Done()
 	}()
 
 	interruptSig := make(chan os.Signal, 1)
 	signal.Notify(interruptSig, syscall.SIGHUP, syscall.SIGINT, syscall.SIGTERM)
 	select {
 	case <-cmdCtx.Done(): // exit success
-	case s := <-interruptSig:
-		log.Printf("try to send signal (%s) to PID (%d)\n", s, cmd.Process.Pid)
+	case sig := <-interruptSig:
+		log.Printf("try to send signal (%s) to PID (%d)\n", sig, cmd.Process.Pid)
 
 		// WARNING: (*os.Process).Signal Sending Interrupt on Windows is not implemented.
-		if err := cmd.Process.Signal(s); err != nil {
-			log.Printf("failed to send signal %s: %s\n", s, err)
+		if err := cmd.Process.Signal(sig); err != nil {
+			// log.Printf("failed to send signal %s: %s\n", s, err)
+			return fmt.Errorf("failed to send signal %s: %w", sig, err)
 		}
+
+		timeoutDur := 20 * time.Second
+		fmt.Printf("wait %s second for command exit\n", timeoutDur)
 
 		select {
 		case <-cmdCtx.Done(): // successfully interrupted
 			log.Printf("successfully interrupted PID (%d)\n", cmd.Process.Pid)
-		case <-time.After(20 * time.Second): // timeout
+		case <-time.After(timeoutDur): // timeout
 			syscall.Kill(-cmd.Process.Pid, syscall.SIGKILL)
-			log.Printf("forcefully killed PID (%d)\n", cmd.Process.Pid)
+			fmt.Printf("force kill PID (%d)\n", cmd.Process.Pid)
+			<-cmdCtx.Done()
 		}
 	}
 
