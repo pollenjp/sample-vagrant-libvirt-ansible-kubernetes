@@ -4,7 +4,7 @@ apiVersion: kubeadm.k8s.io/v1beta3
 kind: InitConfiguration
 localAPIEndpoint:
     advertiseAddress: "{{ k8s_apiserver_advertise_address }}"
-    bindPort: 6443
+    bindPort: {{ k8s_local_api_endpoint_bind_port }}
 ---
 apiVersion: kubeadm.k8s.io/v1beta3
 kind: ClusterConfiguration

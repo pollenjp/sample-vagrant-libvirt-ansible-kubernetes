@@ -111,6 +111,7 @@ class Meta(BaseModel):
 
 class InventoryOutputModel(BaseModel):
     dns_server: GroupModel
+    k8s_cp_load_balancer: GroupModel
     k8s_cp_master: GroupModel
     k8s_other_nodes: GroupModel
     k8s_all: GroupModel
@@ -157,6 +158,7 @@ class InventoryOutputModel(BaseModel):
         c = self.model_copy(deep=True)
         return InventoryOutputModel(
             dns_server=c.dns_server,
+            k8s_cp_load_balancer=c.k8s_cp_load_balancer,
             k8s_cp_master=c.k8s_cp_master,
             k8s_other_nodes=c.k8s_other_nodes,
             k8s_all=c.k8s_all,
@@ -230,6 +232,7 @@ def insert_provisioning_all_vars(inventory_config: InventoryOutputModel, host: s
     return InventoryOutputModel(
         dns_server=inventory_config.dns_server.model_copy(),
         k8s_cp_master=inventory_config.k8s_cp_master.model_copy(),
+        k8s_cp_load_balancer=inventory_config.k8s_cp_load_balancer.model_copy(),
         k8s_other_nodes=inventory_config.k8s_other_nodes.model_copy(),
         k8s_all=inventory_config.k8s_all.model_copy(),
         vagrant_all=GroupModel(hosts=[h for h in get_running_hosts()]),
@@ -293,7 +296,7 @@ def create_network_configs_dns(vagrant_info: dict[Hostname, VagrantProvisioningI
                     ],
                     "ipv6": [],
                     "cnames": {  # format is 'cname: actual'
-                        "k8s-cp-endpoint": "vm01",  # kubernetes control plane endpoint
+                        "k8s-cp-endpoint": "vm-dns",  # kubernetes control plane endpoint (load_balancer)
                     },
                 },
             },
@@ -309,12 +312,14 @@ def main() -> None:
     ProvisioningVagrantInventory(
         inventory_config=InventoryOutputModel(
             dns_server=GroupModel(hosts=[f"{vagrant_domains.vm_dns}"]),
+            k8s_cp_load_balancer=GroupModel(hosts=[f"{vagrant_domains.vm_dns}"]),
             k8s_cp_master=GroupModel(hosts=[f"{vagrant_domains.vm01}"]),
             k8s_other_nodes=GroupModel(
                 hosts=[f"{vagrant_domains.vm02}", f"{vagrant_domains.vm03}", f"{vagrant_domains.vm04}"],
             ),
             k8s_all=GroupModel(
                 children=[
+                    "k8s_cp_load_balancer",
                     "k8s_cp_master",
                     "k8s_other_nodes",
                 ],

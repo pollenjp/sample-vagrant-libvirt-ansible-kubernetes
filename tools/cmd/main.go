@@ -23,6 +23,8 @@ func main() {
 
 	rootCmd.AddCommand(sub.NewCmdCopy())
 	rootCmd.AddCommand(sub.NewCmdSetupVagrantK8s())
+	rootCmd.AddCommand(sub.NewCmdVagrantUp())
+	rootCmd.AddCommand(sub.NewCmdVagrantDestroy())
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Println("Error: ", err)
 		os.Exit(1)

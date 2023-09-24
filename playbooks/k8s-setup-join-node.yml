@@ -185,6 +185,7 @@
         file: "{{ playbook_dir }}/tmp/k8s_cp_master_kubeadm_variables.yml"
       failed_when:
         - not k8s_apiserver_advertise_address
+        - not k8s_local_api_endpoint_bind_port
         - not k8s_token
         - not k8s_discovery_token_ca_cert_hash
         - not k8s_certificate_key
@@ -201,7 +202,7 @@
         executable: /bin/bash
         cmd: >
           kubeadm join
-            {{ k8s_apiserver_advertise_address }}:6443
+            {{ k8s_apiserver_advertise_address }}:{{ k8s_local_api_endpoint_bind_port }}
             {{ "--control-plane" if k8s_is_control_plane }}
             {{ "--certificate-key " ~ k8s_certificate_key if k8s_is_control_plane }}
             --token {{ k8s_token }}

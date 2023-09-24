@@ -66,12 +66,10 @@
   vars:
     install_docker_user: "{{ ansible_user_id }}"
 
-######################
-# Install Kubernetes #
-######################
 ###################################
 # Install Kubernetes requirements #
 ###################################
+
 - name: Install requirements
   become: true
   ansible.builtin.apt:

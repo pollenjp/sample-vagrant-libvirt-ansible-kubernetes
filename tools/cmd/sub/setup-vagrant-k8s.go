@@ -14,7 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/pollenjp/sample-vagrant-libvirt-ansible-kubernete/tools/cmd/config"
 	"github.com/spf13/cobra"
 )
 
@@ -38,14 +37,6 @@ func NewCmdSetupVagrantK8s() *cobra.Command {
 
 func setupVagrantK8s() error {
 	ctx := context.Background()
-
-	if err := runCmdWithEachLineOutput(ctx, exec.Command("vagrant", "destroy", "--force", "--graceful")); err != nil {
-		return err
-	}
-
-	if err := runCmdWithEachLineOutput(ctx, exec.Command("vagrant", "box", "update")); err != nil {
-		return err
-	}
 
 	if err := vagrantUp(ctx); err != nil {
 		return err
@@ -95,30 +86,13 @@ func runAnsiblePlaybook(ctx context.Context) error {
 	return nil
 }
 
-func vagrantUp(ctx context.Context) error {
-	cmdList := []*exec.Cmd{}
-
-	// 各 host に対して vagrant up (一度に多くのVMを起動すると失敗する場合があるため、1つずつ起動する)
-	for _, host := range config.VagrantHosts {
-		cmd := exec.Command("vagrant", "up", host)
-		cmdList = append(cmdList, cmd)
-	}
-
-	for _, cmd := range cmdList {
-		if err := runCmdWithEachLineOutput(ctx, cmd); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 func runCmdWithEachLineOutput(ctx context.Context, cmd *exec.Cmd) error {
 	fmt.Printf("run command: %s\n", cmd.Args)
 
 	reader, writer := io.Pipe()
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} // to kill process group
 	cmd.Stdout = writer
+	cmd.Stderr = writer
 	if err := cmd.Start(); err != nil {
 		return err
 	}

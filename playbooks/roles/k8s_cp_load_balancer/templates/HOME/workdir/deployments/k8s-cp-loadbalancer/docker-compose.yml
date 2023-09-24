@@ -1,0 +1,12 @@
+services:
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - nginx_data:/var/log/nginx
+    ports:
+      - "{{ k8s_local_api_endpoint_bind_port }}:{{ k8s_local_api_endpoint_bind_port }}"
+    restart: always
+volumes:
+  nginx_data:
+    driver: local

@@ -1,0 +1,84 @@
+---
+#########################
+# Copy deployment files #
+#########################
+
+- name: Set deployment path and k8s_first_control_plane_host
+  ansible.builtin.set_fact:
+    deployment_path_from_home: "workdir/deployments/k8s_cp_load_balancer"
+    k8s_first_control_plane_host: "{{ groups['k8s_cp_master'][0] }}"
+  changed_when: false
+- name: Create deployment directory
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/{{ deployment_path_from_home }}"
+    state: directory
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: 0755
+- name: Copy files
+  ansible.builtin.template:
+    src: "HOME/{{ deployment_path_from_home }}/{{ item }}"
+    dest: "{{ ansible_env.HOME }}/{{ deployment_path_from_home }}/{{ item }}"
+    mode: 0644
+  with_items:
+    - docker-compose.yml
+- name: Copy files with special embedding
+  ansible.builtin.template:
+    src: "HOME/{{ deployment_path_from_home }}/nginx.conf"
+    dest: "{{ ansible_env.HOME }}/{{ deployment_path_from_home }}/nginx.conf"
+    mode: 0644
+    block_start_string: >-
+      {% raw %}#{%{% endraw %}
+    block_end_string: >-
+      {% raw %}%}#{% endraw %}
+    variable_start_string: >-
+      {% raw %}#{{{% endraw %}
+    variable_end_string: >-
+      {% raw %}}}#{% endraw %}
+  vars:
+    upstream_list:
+      - "server {{ k8s_first_control_plane_host }}:{{ k8s_local_api_endpoint_bind_port }};"
+
+##################
+# Install Docker #
+##################
+
+- name: Install Docker
+  ansible.builtin.include_role:
+    name: install_docker
+- name: Add to docker group
+  ansible.builtin.include_role:
+    name: install_docker
+    tasks_from: add_to_docker_group
+  vars:
+    install_docker_user: "{{ ansible_user_id }}"
+
+#######
+# Run #
+#######
+
+- name: Compose up
+  community.docker.docker_compose:
+    project_src: "{{ ansible_env.HOME }}/{{ deployment_path_from_home }}"
+    state: present
+    build: true
+    remove_orphans: true
+    restarted: true
+
+################
+# Health Check #
+################
+
+- name: Sleep for containers to start
+  ansible.builtin.wait_for:
+    timeout: 10
+- name: Check container is running
+  ansible.builtin.command:
+    chdir: "{{ deployment_path_from_home }}"
+    cmd: >
+      {% raw %}
+      docker compose ps nginx --format '{{ .State }}'
+      {% endraw %}
+  register: result
+  failed_when:
+    - result.stdout != "running"

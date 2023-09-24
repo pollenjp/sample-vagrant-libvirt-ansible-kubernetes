@@ -33,6 +33,7 @@
   ansible.builtin.debug:
     msg: |
       k8s_apiserver_advertise_address: {{ k8s_apiserver_advertise_address }}
+      k8s_local_api_endpoint_bind_port: {{ k8s_local_api_endpoint_bind_port }}
       k8s_cp_endpoint: {{ k8s_cp_endpoint }}
 - name: Copy kubeadm_config.yaml
   ansible.builtin.template:

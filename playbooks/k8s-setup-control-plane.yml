@@ -1,8 +1,15 @@
 ---
+- name: Setup load_balancer for Kubernetes Control Planes
+  hosts:
+    - k8s_cp_load_balancer
+  tasks:
+    - name: Setup Load Balancer for control-plane-endpoint
+      ansible.builtin.include_role:
+        name: k8s_cp_load_balancer
 - name: Setup Kubernetes Control Planes
   hosts:
     - k8s_cp_master
   tasks:
-    - name: Setup for k8s-control-plane
+    - name: Setup initialize k8s cluster
       ansible.builtin.include_role:
-        name: k8s-control-plane
+        name: k8s_cp_kubeadm_init
