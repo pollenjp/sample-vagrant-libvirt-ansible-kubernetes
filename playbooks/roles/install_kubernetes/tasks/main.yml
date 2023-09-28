@@ -21,12 +21,19 @@
 ########################
 # flannel requirements #
 ########################
+#
+# <https://kubernetes.io/docs/setup/production-environment/container-runtimes/#forwarding-ipv4-and-letting-iptables-see-bridged-traffic>
+#
 
 - name: Ensure br_netfilter is enabled.
   become: true
   community.general.modprobe:
-    name: br_netfilter
+    name: "{{ item }}"
     state: present
+    persistent: present
+  with_items:
+    - overlay
+    - br_netfilter
 
 - name: Set tmp variables
   ansible.builtin.set_fact:
@@ -51,6 +58,7 @@
   with_items:
     - net.bridge.bridge-nf-call-iptables
     - net.bridge.bridge-nf-call-ip6tables
+    - net.ipv4.ip_forward
 
 #####################
 # Install Docker CE #
@@ -186,6 +194,9 @@
 ########
 # etcd #
 ########
+#
+# <https://kubernetes.io/docs/setup/production-environment/container-runtimes/#containerd>
+#
 
 # containerd
 
@@ -232,3 +243,43 @@
 - name: Sleep for waiting containerd running completely
   ansible.builtin.command: sleep 20
   changed_when: false
+
+#################
+# Verify config #
+#################
+
+- name: Verify modprobe
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -eu
+      set -o pipefail
+
+      # lsmod field
+      #
+      # - Module
+      # - Size
+      # - Used
+      # - by
+
+      # 存在していれば良い？
+      lsmod | grep "^{{ item }}"
+  changed_when: false
+  with_items:
+    - overlay
+    - br_netfilter
+- name: Verify sysctl
+  ansible.builtin.shell:
+    executable: /bin/bash
+    cmd: |
+      set -eu
+      set -o pipefail
+
+      # sysctl output is 'parameter = value'
+
+      is_enabled=$(sysctl {{ item }} | awk '{print $3}')
+      [[ "${is_enabled}" == "1" ]] || exit 1
+  with_items:
+    - net.bridge.bridge-nf-call-iptables
+    - net.bridge.bridge-nf-call-ip6tables
+    - net.ipv4.ip_forward

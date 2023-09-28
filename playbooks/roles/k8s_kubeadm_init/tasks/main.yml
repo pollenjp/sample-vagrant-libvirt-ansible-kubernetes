@@ -1,8 +1,4 @@
 ---
-###########
-# kubeadm #
-###########
-
 - name: Check required variables
   ansible.builtin.debug:
     msg: |
@@ -11,6 +7,10 @@
   failed_when:
     - >-
       not ( ansible_distribution == "Ubuntu" and ansible_distribution_version == "22.04" )
+
+###########
+# kubeadm #
+###########
 
 - name: Resolve domain name
   ansible.builtin.command:
@@ -22,21 +22,30 @@
       {{ inventory_hostname }}
   register: result
   changed_when: false
-- name: Set k8s_apiserver_advertise_address and validate as ip address
+- name: Set apiserver_advertise_address and validate as ip address
   ansible.builtin.set_fact:
-    k8s_apiserver_advertise_address: "{{ result.stdout.rstrip() | ansible.utils.ipaddr('address') }}"
+    k8s_kubeadm_init_role__local_api_endpoint__advertise_address: "{{ result.stdout.rstrip() | ansible.utils.ipaddr('address') }}"
   changed_when: false
   failed_when:
-    - not k8s_apiserver_advertise_address
+    - not k8s_kubeadm_init_role__local_api_endpoint__advertise_address
 
 - name: Check required vars
   ansible.builtin.debug:
     msg: |
-      k8s_apiserver_advertise_address: {{ k8s_apiserver_advertise_address }}
-      k8s_local_api_endpoint_bind_port: {{ k8s_local_api_endpoint_bind_port }}
-      k8s_cp_endpoint: {{ k8s_cp_endpoint }}
+      k8s_kubeadm_init_role__local_api_endpoint__advertise_address: {{ k8s_kubeadm_init_role__local_api_endpoint__advertise_address }}
+      k8s_kubeadm_init_role__local_api_endpoint__bind_port: {{ k8s_kubeadm_init_role__local_api_endpoint__bind_port }}
+      k8s_kubeadm_init_role__control_plane_endpoint__address: {{ k8s_kubeadm_init_role__control_plane_endpoint__address }}
+      k8s_kubeadm_init_role__control_plane_endpoint__port: {{ k8s_kubeadm_init_role__control_plane_endpoint__port }}
+
 - name: Copy kubeadm_config.yaml
   ansible.builtin.template:
+    # required vars
+    #
+    # - k8s_kubeadm_init_role__local_api_endpoint__advertise_address
+    # - k8s_kubeadm_init_role__local_api_endpoint__bind_port
+    # - k8s_kubeadm_init_role__control_plane_endpoint__address
+    # - k8s_kubeadm_init_role__control_plane_endpoint__port
+    #
     src: tmp/kubeadm_config.yaml
     dest: /tmp/kubeadm_config.yaml
     mode: 0644

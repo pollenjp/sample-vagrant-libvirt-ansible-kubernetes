@@ -9,27 +9,6 @@
   hosts:
     - k8s_cp_master # Expect already running as a control plane
   tasks:
-    ###################################
-    # k8s_apiserver_advertise_address #
-    ###################################
-
-    - name: Resolve domain name
-      ansible.builtin.command:
-        # TODO: @pollenjp Validation to check if 'inventory_hostname' is a domain name
-        cmd: >-
-          dig -t a
-          {{ '@' ~ network_configs.name_server if network_configs.name_server }}
-          +short
-          {{ inventory_hostname }}
-      register: result
-      changed_when: false
-    - name: Set k8s_apiserver_advertise_address and validate as ip address
-      ansible.builtin.set_fact:
-        k8s_apiserver_advertise_address: "{{ result.stdout | ansible.utils.ipaddr('address') }}"
-      changed_when: false
-      failed_when:
-        - not k8s_apiserver_advertise_address
-
     #############
     # k8s_token #
     #############
@@ -73,12 +52,12 @@
     - name: Set token as variable
       no_log: true # include secret
       ansible.builtin.set_fact:
-        k8s_token: "{{ result.stdout.rstrip() }}"
-      failed_when: not k8s_token
+        var_k8s_token: "{{ result.stdout.rstrip() }}"
+      failed_when: not var_k8s_token
 
-    ####################################
-    # k8s_discovery_token_ca_cert_hash #
-    ####################################
+    ########################################
+    # var_k8s_discovery_token_ca_cert_hash #
+    ########################################
 
     - name: Get hash from ca.crt
       no_log: true # include secret
@@ -92,11 +71,11 @@
             | sed 's/^.* //'
       register: result
       changed_when: false
-    - name: Set k8s_discovery_token_ca_cert_hash
+    - name: Set var_k8s_discovery_token_ca_cert_hash
       no_log: true # include secret
       ansible.builtin.set_fact:
-        k8s_discovery_token_ca_cert_hash: "{{ result.stdout }}"
-      failed_when: not k8s_discovery_token_ca_cert_hash
+        var_k8s_discovery_token_ca_cert_hash: "{{ result.stdout }}"
+      failed_when: not var_k8s_discovery_token_ca_cert_hash
 
     ####################################################
     # Certificate key for kubeadm join --control-plane #
@@ -112,8 +91,8 @@
     - name: Set a certificate-key variable
       no_log: true # include secret
       ansible.builtin.set_fact:
-        k8s_certificate_key: "{{ result.stdout.rstrip() }}"
-      failed_when: not k8s_certificate_key
+        var_k8s_certificate_key: "{{ result.stdout.rstrip() }}"
+      failed_when: not var_k8s_certificate_key
 
     # control-plane を追加する場合の対応
     - name: Kubeadm upload-certs
@@ -122,7 +101,7 @@
         cmd: >
           kubeadm init phase upload-certs
           --upload-certs
-          --certificate-key {{ k8s_certificate_key }}
+          --certificate-key {{ var_k8s_certificate_key }}
           --skip-certificate-key-print
       changed_when: true
 
@@ -139,10 +118,9 @@
       no_log: true # include secret
       ansible.builtin.copy:
         content: |
-          k8s_apiserver_advertise_address: {{ k8s_apiserver_advertise_address }}
-          k8s_token: {{ k8s_token }}
-          k8s_discovery_token_ca_cert_hash: {{ k8s_discovery_token_ca_cert_hash }}
-          k8s_certificate_key: {{ k8s_certificate_key }}
+          var_k8s_token: {{ var_k8s_token }}
+          var_k8s_discovery_token_ca_cert_hash: {{ var_k8s_discovery_token_ca_cert_hash }}
+          var_k8s_certificate_key: {{ var_k8s_certificate_key }}
         dest: "{{ tempfile_kubeadm_vars.path }}"
         mode: 0600
     - name: Copy the token file to local
@@ -156,89 +134,68 @@
         state: absent
       when: tempfile_kubeadm_vars.path is defined
 
+    ####################
+    # Fetch admin.conf #
+    ####################
+
+    - name: Fetch admin.conf
+      become: true
+      ansible.builtin.fetch:
+        src: /etc/kubernetes/admin.conf
+        dest: "{{ playbook_dir }}/tmp/k8s_cp_master_admin.conf"
+        flat: true
+
+###############################
+# Update k8s-cp-load-balancer #
+###############################
+
+- name: Update k8s-cp-load-balancer
+  hosts:
+    - k8s_cp_load_balancer
+  tasks:
+    - name: Update load balancer
+      ansible.builtin.include_role:
+        name: k8s_cp_load_balancer
+      vars:
+        k8s_cp_load_balancer_role__nginx_conf__upstream_list: "{{ const_k8s_cp_load_balancer__nginx_conf__upstream_list }}"
+        k8s_cp_load_balancer_role__nginx_conf__server_listen_port: "{{ const_k8s_local_api_endpoint_bind_port }}"
+
+################
+# Kubeadm Join #
+################
+
 - name: Join k8s nodes
   hosts:
     - k8s_other_nodes
   tasks:
-    - name: Check supported version
-      ansible.builtin.debug:
-        msg: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
-      failed_when:
-        - >-
-          not (
-            ansible_distribution == "Ubuntu"
-            and
-            ansible_distribution_version in ("22.04",)
-          )
-    - name: Check required variables
-      ansible.builtin.debug:
-        msg: |
-          k8s_is_control_plane={{ k8s_is_control_plane }}
-
-    ################
-    # kubeadm join #
-    ################
-
     - name: Load kubeadm variables
-      no_log: true # include secret
+      # no_log: true # include secret
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/tmp/k8s_cp_master_kubeadm_variables.yml"
       failed_when:
-        - not k8s_apiserver_advertise_address
-        - not k8s_local_api_endpoint_bind_port
-        - not k8s_token
-        - not k8s_discovery_token_ca_cert_hash
-        - not k8s_certificate_key
-    - name: Reset kubeadm
-      become: true
-      # TODO: @pollenjp Delegate to a variable if reset is allowed
-      ansible.builtin.command:
-        cmd: kubeadm reset -f
-      changed_when: true
-    - name: Join node by 'kubeadm join'
-      become: true
-      no_log: true # include secret
-      ansible.builtin.command:
-        executable: /bin/bash
-        cmd: >
-          kubeadm join
-            {{ k8s_apiserver_advertise_address }}:{{ k8s_local_api_endpoint_bind_port }}
-            {{ "--control-plane" if k8s_is_control_plane }}
-            {{ "--certificate-key " ~ k8s_certificate_key if k8s_is_control_plane }}
-            --token {{ k8s_token }}
-            --discovery-token-ca-cert-hash sha256:{{ k8s_discovery_token_ca_cert_hash }}
-      changed_when: true
-
-    ##################
-    # reload kubelet #
-    ##################
-
-    - name: Restart kubelet
-      become: true
-      ansible.builtin.systemd:
-        name: kubelet
-        state: restarted
-        daemon_reload: true
-
-    #########################################################
-    # Copy the `admin.conf` file to the `~/.kube` directory #
-    #########################################################
-
-    - name: Make directory .kube
-      ansible.builtin.file:
-        path: "{{ ansible_env.HOME }}/.kube"
-        state: directory
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
-        mode: "0755"
-      when: k8s_is_control_plane
-    - name: Copy config to home dir
-      become: true
-      ansible.builtin.copy:
-        remote_src: true
-        src: /etc/kubernetes/admin.conf
-        dest: "{{ ansible_env.HOME }}/.kube/config"
-        owner: "{{ ansible_user_id }}"
-        group: "{{ ansible_user_id }}"
-        mode: "0600"
-      when: k8s_is_control_plane
+        - not const_k8s_local_api_endpoint_bind_port
+        - not var_k8s_token
+        - not var_k8s_discovery_token_ca_cert_hash
+        - not var_k8s_certificate_key
+    - name: Kubeadm join (control-plane)
+      when: const_k8s_is_control_plane
+      ansible.builtin.include_role:
+        name: k8s_kubeadm_join
+      vars:
+        k8s_kubeadm_join_role__control_plane_endpoint__address: "{{ const_k8s_cp_endpoint }}"
+        k8s_kubeadm_join_role__control_plane_endpoint__port: "{{ const_k8s_local_api_endpoint_bind_port }}"
+        k8s_kubeadm_join_role__is_control_plane: "{{ const_k8s_is_control_plane }}"
+        k8s_kubeadm_join_role__token: "{{ var_k8s_token }}"
+        k8s_kubeadm_join_role__discovery_token_ca_cert_hash: "{{ var_k8s_discovery_token_ca_cert_hash }}"
+        k8s_kubeadm_join_role__certificate_key: "{{ var_k8s_certificate_key }}"
+    - name: Kubeadm join (worker)
+      when: not const_k8s_is_control_plane
+      ansible.builtin.include_role:
+        name: k8s_kubeadm_join
+      vars:
+        k8s_kubeadm_join_role__control_plane_endpoint__address: "{{ const_k8s_cp_endpoint }}"
+        k8s_kubeadm_join_role__control_plane_endpoint__port: "{{ const_k8s_local_api_endpoint_bind_port }}"
+        k8s_kubeadm_join_role__is_control_plane: "{{ const_k8s_is_control_plane }}"
+        k8s_kubeadm_join_role__token: "{{ var_k8s_token }}"
+        k8s_kubeadm_join_role__discovery_token_ca_cert_hash: "{{ var_k8s_discovery_token_ca_cert_hash }}"
+        k8s_kubeadm_join_role__certificate_key: "{{ var_k8s_certificate_key }}"

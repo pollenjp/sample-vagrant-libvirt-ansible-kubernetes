@@ -38,6 +38,10 @@ func NewCmdSetupVagrantK8s() *cobra.Command {
 func setupVagrantK8s() error {
 	ctx := context.Background()
 
+	// if err := runCmdWithEachLineOutput(ctx, exec.Command("vagrant", "destroy", "-fg")); err != nil {
+	// 	return err
+	// }
+
 	if err := vagrantUp(ctx); err != nil {
 		return err
 	}
@@ -50,19 +54,21 @@ func setupVagrantK8s() error {
 		return err
 	}
 
-	if err := runAnsiblePlaybook(ctx); err != nil {
+	if err := runAnsiblePlaybook(
+		ctx,
+		[]string{
+			"playbooks/dns_server.yml",
+			"playbooks/k8s-setup-control-plane.yml",
+			"playbooks/k8s-setup-join-node.yml",
+		},
+	); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func runAnsiblePlaybook(ctx context.Context) error {
-	playbooks := []string{
-		"playbooks/dns_server.yml",
-		"playbooks/k8s-setup-control-plane.yml",
-		"playbooks/k8s-setup-join-node.yml",
-	}
+func runAnsiblePlaybook(ctx context.Context, playbooks []string) error {
 	cmdList := []*exec.Cmd{}
 	for _, playbook := range playbooks {
 		playbook, err := filepath.Abs(playbook)

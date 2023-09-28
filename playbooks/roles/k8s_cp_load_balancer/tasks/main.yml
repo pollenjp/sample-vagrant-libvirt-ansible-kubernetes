@@ -1,12 +1,17 @@
 ---
+- name: Check required variables
+  ansible.builtin.debug:
+    msg: |
+      k8s_cp_load_balancer_role__nginx_conf__upstream_list: {{ k8s_cp_load_balancer_role__nginx_conf__upstream_list }}
+      k8s_cp_load_balancer_role__nginx_conf__server_listen_port: {{ k8s_cp_load_balancer_role__nginx_conf__server_listen_port }}
+
 #########################
 # Copy deployment files #
 #########################
 
-- name: Set deployment path and k8s_first_control_plane_host
+- name: Set deployment path
   ansible.builtin.set_fact:
-    deployment_path_from_home: "workdir/deployments/k8s_cp_load_balancer"
-    k8s_first_control_plane_host: "{{ groups['k8s_cp_master'][0] }}"
+    deployment_path_from_home: "workdir/deployments/k8s-cp-load-balancer"
   changed_when: false
 - name: Create deployment directory
   ansible.builtin.file:
@@ -17,6 +22,10 @@
     mode: 0755
 - name: Copy files
   ansible.builtin.template:
+    # required vars
+    #
+    # - k8s_cp_load_balancer_role__nginx_conf__server_listen_port
+    #
     src: "HOME/{{ deployment_path_from_home }}/{{ item }}"
     dest: "{{ ansible_env.HOME }}/{{ deployment_path_from_home }}/{{ item }}"
     mode: 0644
@@ -24,6 +33,11 @@
     - docker-compose.yml
 - name: Copy files with special embedding
   ansible.builtin.template:
+    # required vars
+    #
+    # - k8s_cp_load_balancer_role__nginx_conf__upstream_list
+    # - k8s_cp_load_balancer_role__nginx_conf__server_listen_port
+    #
     src: "HOME/{{ deployment_path_from_home }}/nginx.conf"
     dest: "{{ ansible_env.HOME }}/{{ deployment_path_from_home }}/nginx.conf"
     mode: 0644
@@ -35,9 +49,6 @@
       {% raw %}#{{{% endraw %}
     variable_end_string: >-
       {% raw %}}}#{% endraw %}
-  vars:
-    upstream_list:
-      - "server {{ k8s_first_control_plane_host }}:{{ k8s_local_api_endpoint_bind_port }};"
 
 ##################
 # Install Docker #
@@ -81,4 +92,5 @@
       {% endraw %}
   register: result
   failed_when:
+    - result.rc != 0
     - result.stdout != "running"

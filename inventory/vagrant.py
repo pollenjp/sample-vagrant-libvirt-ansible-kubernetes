@@ -24,13 +24,19 @@ vagrant_domain = "vagrant.home"
 
 
 class VagrantDomains(BaseModel):
-    # VMs
+    #######
+    # VMs #
+    #######
+    #
+    # FIXME: Hard Coding
+    #
 
     vm_dns: str = Field(default=f"vm-dns.{vagrant_domain}")
     vm01: str = Field(default=f"vm01.{vagrant_domain}")
     vm02: str = Field(default=f"vm02.{vagrant_domain}")
     vm03: str = Field(default=f"vm03.{vagrant_domain}")
     vm04: str = Field(default=f"vm04.{vagrant_domain}")
+    vm05: str = Field(default=f"vm05.{vagrant_domain}")
 
     # DNS
 
@@ -62,11 +68,13 @@ class GroupModel(BaseModel):
 
 
 class HostVars(BaseModel):
+    # FIXME: Hard Coding
     vm_dns: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm_dns}")
     vm01: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm01}")
     vm02: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm02}")
     vm03: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm03}")
     vm04: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm04}")
+    vm05: dict[str, t.Any] = Field(serialization_alias=f"{vagrant_domains.vm05}")
 
     model_config = ConfigDict(frozen=True)
 
@@ -98,6 +106,7 @@ class HostVars(BaseModel):
             vm02={**self.vm02, **other.vm02},
             vm03={**self.vm03, **other.vm03},
             vm04={**self.vm04, **other.vm04},
+            vm05={**self.vm05, **other.vm05},
         )
 
 
@@ -296,7 +305,8 @@ def create_network_configs_dns(vagrant_info: dict[Hostname, VagrantProvisioningI
                     ],
                     "ipv6": [],
                     "cnames": {  # format is 'cname: actual'
-                        "k8s-cp-endpoint": "vm-dns",  # kubernetes control plane endpoint (load_balancer)
+                        # kubernetes control plane endpoint (load_balancer)
+                        vagrant_domains.k8s_cp_endpoint.split(".")[0]: vagrant_domains.vm_dns.split(".")[0],
                     },
                 },
             },
@@ -312,10 +322,28 @@ def main() -> None:
     ProvisioningVagrantInventory(
         inventory_config=InventoryOutputModel(
             dns_server=GroupModel(hosts=[f"{vagrant_domains.vm_dns}"]),
-            k8s_cp_load_balancer=GroupModel(hosts=[f"{vagrant_domains.vm_dns}"]),
+            k8s_cp_load_balancer=GroupModel(
+                hosts=[f"{vagrant_domains.vm_dns}"],
+                vars={
+                    "const_k8s_cp_load_balancer__nginx_conf__upstream_list": [  # 最終的に nginx.conf に書き込まれる upstream のリスト
+                        f"server {vagrant_domains.vm01}"
+                        + r":{{ const_k8s_local_api_endpoint_bind_port }} max_fails=2 fail_timeout=30s ;",
+                        f"server {vagrant_domains.vm02}"
+                        + r":{{ const_k8s_local_api_endpoint_bind_port }} max_fails=2 fail_timeout=30s ;",
+                        f"server {vagrant_domains.vm03}"
+                        + r":{{ const_k8s_local_api_endpoint_bind_port }} max_fails=2 fail_timeout=30s ;",
+                        # f"server {vagrant_domains.vm02}" + r":{{ const_k8s_local_api_endpoint_bind_port }} backup ;",
+                    ],
+                },
+            ),
             k8s_cp_master=GroupModel(hosts=[f"{vagrant_domains.vm01}"]),
             k8s_other_nodes=GroupModel(
-                hosts=[f"{vagrant_domains.vm02}", f"{vagrant_domains.vm03}", f"{vagrant_domains.vm04}"],
+                hosts=[
+                    f"{vagrant_domains.vm02}",
+                    f"{vagrant_domains.vm03}",
+                    f"{vagrant_domains.vm04}",
+                    f"{vagrant_domains.vm05}",
+                ],
             ),
             k8s_all=GroupModel(
                 children=[
@@ -324,7 +352,7 @@ def main() -> None:
                     "k8s_other_nodes",
                 ],
                 vars={
-                    "k8s_cp_endpoint": f"{vagrant_domains.k8s_cp_endpoint}",
+                    "const_k8s_cp_endpoint": f"{vagrant_domains.k8s_cp_endpoint}",
                 },
             ),
             vagrant_all=GroupModel(),
@@ -333,15 +361,10 @@ def main() -> None:
                 hostvars=HostVars(
                     vm_dns={},
                     vm01={},
-                    vm02={
-                        "k8s_is_control_plane": True,
-                    },
-                    vm03={
-                        "k8s_is_control_plane": False,
-                    },
-                    vm04={
-                        "k8s_is_control_plane": False,
-                    },
+                    vm02={"const_k8s_is_control_plane": True},
+                    vm03={"const_k8s_is_control_plane": True},
+                    vm04={"const_k8s_is_control_plane": False},
+                    vm05={"const_k8s_is_control_plane": False},
                 ),
             ),
         ),

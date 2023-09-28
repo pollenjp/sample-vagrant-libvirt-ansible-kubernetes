@@ -1,0 +1,89 @@
+---
+- name: Check supported version
+  ansible.builtin.debug:
+    msg: "{{ ansible_distribution }} {{ ansible_distribution_version }}"
+  failed_when:
+    - >-
+      not (
+        ansible_distribution == "Ubuntu"
+        and
+        ansible_distribution_version in ("22.04",)
+      )
+- name: Check required variables
+  ansible.builtin.assert:
+    that:
+      - k8s_kubeadm_join_role__control_plane_endpoint__address is defined
+      - k8s_kubeadm_join_role__control_plane_endpoint__port is defined
+      - k8s_kubeadm_join_role__is_control_plane is defined
+      - k8s_kubeadm_join_role__token is defined
+      - k8s_kubeadm_join_role__discovery_token_ca_cert_hash is defined
+- name: Check required variables (control plane)
+  ansible.builtin.assert:
+    that:
+      - k8s_kubeadm_join_role__certificate_key is defined
+  when: k8s_kubeadm_join_role__is_control_plane
+
+################
+# kubeadm join #
+################
+
+- name: Reset kubeadm
+  become: true
+  ansible.builtin.command:
+    cmd: kubeadm reset -f
+  changed_when: true
+- name: Join node by 'kubeadm join'
+  become: true
+  no_log: true # include secret
+  ansible.builtin.command:
+    executable: /bin/bash
+    cmd: >
+      kubeadm join
+        {{ k8s_kubeadm_join_role__control_plane_endpoint__address }}:{{ k8s_kubeadm_join_role__control_plane_endpoint__port }}
+        {{ "--control-plane" if k8s_kubeadm_join_role__is_control_plane }}
+        {{ "--certificate-key " ~ k8s_kubeadm_join_role__certificate_key if k8s_kubeadm_join_role__is_control_plane }}
+        --token {{ k8s_kubeadm_join_role__token }}
+        --discovery-token-ca-cert-hash sha256:{{ k8s_kubeadm_join_role__discovery_token_ca_cert_hash }}
+  changed_when: true
+
+##################
+# reload kubelet #
+##################
+
+- name: Restart kubelet
+  become: true
+  ansible.builtin.systemd:
+    name: kubelet
+    state: restarted
+    daemon_reload: true
+
+#########################################################
+# Copy the `admin.conf` file to the `~/.kube` directory #
+#########################################################
+
+- name: Make directory .kube
+  ansible.builtin.file:
+    path: "{{ ansible_env.HOME }}/.kube"
+    state: directory
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: "0755"
+- name: Copy config to home dir (control-plane)
+  become: true
+  ansible.builtin.copy:
+    remote_src: true
+    src: /etc/kubernetes/admin.conf
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: "0600"
+  when: k8s_kubeadm_join_role__is_control_plane
+- name: Copy config to home dir (non-cp)
+  become: true
+  ansible.builtin.copy:
+    src: "{{ playbook_dir }}/tmp/k8s_cp_master_admin.conf"
+    dest: "{{ ansible_env.HOME }}/.kube/config"
+    owner: "{{ ansible_user_id }}"
+    group: "{{ ansible_user_id }}"
+    mode: "0600"
+  when: not k8s_kubeadm_join_role__is_control_plane
