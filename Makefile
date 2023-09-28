@@ -110,6 +110,7 @@ vagrant-up:  ##
 	vagrant up vm02.vagrant.home
 	vagrant up vm03.vagrant.home
 	vagrant up vm04.vagrant.home
+	vagrant up vm05.vagrant.home
 
 .PHONY: vagrant-halt
 vagrant-halt:  ##
