@@ -38,7 +38,7 @@
 - name: Copy named.conf.options template
   become: true
   ansible.builtin.template:
-    src: "etc/bind/etc/bind/named.conf.options"
+    src: "etc/bind/etc/bind/named.conf.options.j2"
     dest: "/etc/bind/etc/bind/named.conf.options"
     owner: bind
     group: bind
@@ -53,7 +53,7 @@
 - name: Copy named.conf template
   become: true
   ansible.builtin.template:
-    src: "etc/bind/etc/bind/named.conf.local"
+    src: "etc/bind/etc/bind/named.conf.local.j2"
     dest: "/etc/bind/etc/bind/named.conf.local"
     owner: bind
     group: bind
@@ -63,7 +63,7 @@
 - name: Copy zone template
   become: true
   ansible.builtin.template:
-    src: "etc/bind/etc/bind/template.zone"
+    src: "etc/bind/etc/bind/template.zone.j2"
     dest: "/etc/bind/etc/bind/{{ item.key }}.zone"
     owner: bind
     group: bind

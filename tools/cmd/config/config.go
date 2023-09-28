@@ -7,5 +7,6 @@ var (
 		"vm02.vagrant.home",
 		"vm03.vagrant.home",
 		"vm04.vagrant.home",
+		"vm05.vagrant.home",
 	}
 )

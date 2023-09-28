@@ -18,11 +18,13 @@ end
 
 VAGRANT_BOX = 'generic/ubuntu2204'
 VM_SPEC_ARR = [
+  # kubeamd require three control plane for HA clusters
   VmSpecData.new('vm-dns.vagrant.home', 2, 2048, VAGRANT_BOX, 'libvirt', 'dns node'),
-  VmSpecData.new('vm01.vagrant.home', 4, 4096, VAGRANT_BOX, 'libvirt', 'cp01 node'),
+  VmSpecData.new('vm01.vagrant.home', 2, 4096, VAGRANT_BOX, 'libvirt', 'cp01 node'),
   VmSpecData.new('vm02.vagrant.home', 2, 4096, VAGRANT_BOX, 'libvirt', 'cp02 node'),
-  VmSpecData.new('vm03.vagrant.home', 2, 2048, VAGRANT_BOX, 'libvirt', 'worker01 node'),
-  VmSpecData.new('vm04.vagrant.home', 2, 2048, VAGRANT_BOX, 'libvirt', 'worker02 node')
+  VmSpecData.new('vm03.vagrant.home', 2, 2048, VAGRANT_BOX, 'libvirt', 'cp03 node'),
+  VmSpecData.new('vm04.vagrant.home', 2, 2048, VAGRANT_BOX, 'libvirt', 'worker01 node'),
+  VmSpecData.new('vm05.vagrant.home', 2, 2048, VAGRANT_BOX, 'libvirt', 'worker02 node')
 ].freeze
 
 Vagrant.configure('2') do |config|

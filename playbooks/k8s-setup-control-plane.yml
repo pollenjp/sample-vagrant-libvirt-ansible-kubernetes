@@ -1,8 +1,23 @@
 ---
+- name: Setup load_balancer for Kubernetes Control Planes
+  hosts:
+    - k8s_cp_load_balancer
+  tasks:
+    - name: Setup Load Balancer for control-plane-endpoint
+      ansible.builtin.include_role:
+        name: k8s_cp_load_balancer
+      vars:
+        k8s_cp_load_balancer_role__nginx_conf__upstream_list: # kubeadm init 時はcontrol-planeが1つだけ
+          - "server {{ groups['k8s_cp_master'][0] }}:{{ const_k8s_local_api_endpoint_bind_port }} ;"
+        k8s_cp_load_balancer_role__nginx_conf__server_listen_port: "{{ const_k8s_local_api_endpoint_bind_port }}"
 - name: Setup Kubernetes Control Planes
   hosts:
     - k8s_cp_master
   tasks:
-    - name: Setup for k8s-control-plane
+    - name: Setup initialize k8s cluster
       ansible.builtin.include_role:
-        name: k8s-control-plane
+        name: k8s_kubeadm_init
+      vars:
+        k8s_kubeadm_init_role__local_api_endpoint__bind_port: "{{ const_k8s_local_api_endpoint_bind_port }}"
+        k8s_kubeadm_init_role__control_plane_endpoint__address: "{{ const_k8s_cp_endpoint }}"
+        k8s_kubeadm_init_role__control_plane_endpoint__port: "{{ const_k8s_local_api_endpoint_bind_port }}"

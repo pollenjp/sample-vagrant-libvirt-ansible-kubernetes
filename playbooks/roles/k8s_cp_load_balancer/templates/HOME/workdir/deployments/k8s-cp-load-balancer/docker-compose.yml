@@ -1,0 +1,13 @@
+services:
+  nginx:
+    image: nginx:latest
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf
+      - nginx_data:/var/log/nginx
+      - /etc/kubernetes/pki:/etc/kubernetes/pki
+    ports:
+      - "{{ k8s_cp_load_balancer_role__nginx_conf__server_listen_port }}:{{ k8s_cp_load_balancer_role__nginx_conf__server_listen_port }}"
+    restart: always
+volumes:
+  nginx_data:
+    driver: local

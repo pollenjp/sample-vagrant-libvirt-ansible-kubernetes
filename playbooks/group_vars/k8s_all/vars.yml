@@ -5,3 +5,9 @@ k8s_version:
   minor: 28
   patch: 2
 k8s_version_ubuntu: "={{ k8s_version.major }}.{{ k8s_version.minor }}.{{ k8s_version.patch }}-1.1"
+
+#
+# <https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta3/#kubeadm-k8s-io-v1beta3-APIEndpoint>
+#
+# default is 6443
+const_k8s_local_api_endpoint_bind_port: 6443

@@ -30,12 +30,22 @@ type SrcDest struct {
 }
 
 func copy() error {
+	ctx := context.Background()
+
 	home, err := homedir.Dir()
 	if err != nil {
 		return fmt.Errorf("failed to get user home directory: %w", err)
 	}
 	srcRoot := filepath.Join(home, "workdir/github.com/pollenjp/infra/ansible")
 	destRoot := filepath.Join(home, "workdir/github.com/pollenjp/sample-vagrant-libvirt-ansible-kubernetes")
+
+	if err := runCmdWithEachLineOutput(ctx, exec.Command("rm", "-rfv", filepath.Join(destRoot, "playbooks"))); err != nil {
+		return err
+	}
+
+	if err := runCmdWithEachLineOutput(ctx, exec.Command("rm", "-rfv", filepath.Join(destRoot, "tools", "cmd"))); err != nil {
+		return err
+	}
 
 	relativePaths := []string{
 		".gitignore",
@@ -60,7 +70,9 @@ func copy() error {
 		"playbooks/roles/install_bind",
 		"playbooks/roles/install_docker",
 		"playbooks/roles/install_kubernetes",
-		"playbooks/roles/k8s-control-plane",
+		"playbooks/roles/k8s_kubeadm_init",
+		"playbooks/roles/k8s_kubeadm_join",
+		"playbooks/roles/k8s_cp_load_balancer",
 		"playbooks/roles/k8s_requirements",
 		"playbooks/roles/utils",
 		"tools/cmd",
@@ -92,7 +104,7 @@ func copy() error {
 			src += "/"
 		}
 
-		if err := runCmdWithEachLineOutput(context.Background(), exec.Command("rsync", "-a", src, target.dest)); err != nil {
+		if err := runCmdWithEachLineOutput(ctx, exec.Command("rsync", "-a", src, target.dest)); err != nil {
 			return err
 		}
 	}

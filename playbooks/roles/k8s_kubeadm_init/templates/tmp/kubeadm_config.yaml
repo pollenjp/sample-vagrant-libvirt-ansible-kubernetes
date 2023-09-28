@@ -1,0 +1,16 @@
+---
+# <https://kubernetes.io/docs/reference/config-api/kubeadm-config.v1beta3/>
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: InitConfiguration
+localAPIEndpoint:
+    advertiseAddress: "{{ k8s_kubeadm_init_role__local_api_endpoint__advertise_address }}"
+    bindPort: {{ k8s_kubeadm_init_role__local_api_endpoint__bind_port }}
+---
+apiVersion: kubeadm.k8s.io/v1beta3
+kind: ClusterConfiguration
+networking:
+    serviceSubnet: "10.96.0.0/16" # default
+    # --pod-network-cidr=10.244.0.0/16 is required by flannel
+    podSubnet: "10.244.0.0/16"
+    dnsDomain: "cluster.local" # default
+controlPlaneEndpoint: "{{ k8s_kubeadm_init_role__control_plane_endpoint__address }}:{{ k8s_kubeadm_init_role__control_plane_endpoint__port }}"
